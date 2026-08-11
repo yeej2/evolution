@@ -232,27 +232,33 @@ const MIGRATION_DISTANCE_GOAL := 4000.0
 ## button) that don't all have a World reference handy.
 const HIGHLANDS_MASS_GOAL := 3.0
 
+## Every item also carries a 0..1 `progress` so the HUD can render a real
+## bar instead of a flat done/not-done flag - a bare "x" next to 3 items
+## reads like "you need all 3 of these," which is the opposite of the
+## actual "any ONE of these" design (see can_migrate() below).
 func migration_checklist() -> Array:
 	var biome: String = GameState.world.biome_id if GameState.world else "forest"
 	match biome:
 		"wetlands":
+			var aquatic_done := mutation.has_flag(EffectKeys.AQUATIC_ADAPTED) and touched_water
 			return [
-				{"label": "Aquatic adaptation + touched water", "done": mutation.has_flag(EffectKeys.AQUATIC_ADAPTED) and touched_water},
-				{"label": "Kill the apex", "done": apex_killed},
-				{"label": "Survive a Drought", "done": survived_drought},
+				{"label": "Aquatic adaptation + touched water", "done": aquatic_done, "progress": 1.0 if aquatic_done else 0.0},
+				{"label": "Kill the apex", "done": apex_killed, "progress": 1.0 if apex_killed else 0.0},
+				{"label": "Survive a Drought", "done": survived_drought, "progress": 1.0 if survived_drought else 0.0},
 			]
 		"highlands":
+			var cold_done := mutation.has_flag(EffectKeys.COLD_ADAPTED)
 			return [
-				{"label": "Fur or Insulation", "done": mutation.has_flag(EffectKeys.COLD_ADAPTED)},
-				{"label": "Survive a Wildfire", "done": survived_wildfire},
-				{"label": "Kill the apex", "done": apex_killed},
-				{"label": "Mass >= %.1f" % HIGHLANDS_MASS_GOAL, "done": stats.mass >= HIGHLANDS_MASS_GOAL},
+				{"label": "Fur or Insulation", "done": cold_done, "progress": 1.0 if cold_done else 0.0},
+				{"label": "Survive a Wildfire", "done": survived_wildfire, "progress": 1.0 if survived_wildfire else 0.0},
+				{"label": "Kill the apex", "done": apex_killed, "progress": 1.0 if apex_killed else 0.0},
+				{"label": "Mass >= %.1f" % HIGHLANDS_MASS_GOAL, "done": stats.mass >= HIGHLANDS_MASS_GOAL, "progress": clampf(stats.mass / HIGHLANDS_MASS_GOAL, 0.0, 1.0)},
 			]
 		_:
 			return [
-				{"label": "Mass >= %.1f" % MIGRATION_MASS_GOAL, "done": stats.mass >= MIGRATION_MASS_GOAL},
-				{"label": "Kill the apex", "done": apex_killed},
-				{"label": "Travel far and wide", "done": distance_traveled >= MIGRATION_DISTANCE_GOAL},
+				{"label": "Mass >= %.1f" % MIGRATION_MASS_GOAL, "done": stats.mass >= MIGRATION_MASS_GOAL, "progress": clampf(stats.mass / MIGRATION_MASS_GOAL, 0.0, 1.0)},
+				{"label": "Kill the apex", "done": apex_killed, "progress": 1.0 if apex_killed else 0.0},
+				{"label": "Travel far and wide", "done": distance_traveled >= MIGRATION_DISTANCE_GOAL, "progress": clampf(distance_traveled / MIGRATION_DISTANCE_GOAL, 0.0, 1.0)},
 			]
 
 func can_migrate() -> bool:
@@ -284,6 +290,6 @@ func to_snapshot_core() -> Array:
 	return [entity_id, global_position.x, global_position.y, facing, stats.hp, stats.max_hp, flags, telegraph]
 
 ## Slow-changing player-only fields, broadcast at a much lower rate.
-## [id, mass, speed, mutations, generation, hunger, energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown]
+## [id, mass, speed, mutations, generation, hunger, energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next]
 func to_snapshot_extended() -> Array:
-	return [entity_id, stats.mass, stats.speed, mutation.owned.duplicate(), generation, hunger.hunger, hunger.energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown]
+	return [entity_id, stats.mass, stats.speed, mutation.owned.duplicate(), generation, hunger.hunger, hunger.energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next]

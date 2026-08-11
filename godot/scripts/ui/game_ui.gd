@@ -28,6 +28,8 @@ var gameover_title: Label
 var gameover_stats: Label
 var gameover_repro_row: HBoxContainer
 var charge_bar: ProgressBar
+var ep_bar: ProgressBar
+var migration_rows: Array = [] ## Array of {row: HBoxContainer, label: Label, bar: ProgressBar}
 
 func _ready() -> void:
 	layer = 10
@@ -121,11 +123,22 @@ func update_hud(c: Creature, world: World) -> void:
 	hud_labels["hunger"].text = "Hunger: %d%%   Energy: %d%%" % [int(c.hunger.hunger), int(c.hunger.energy)]
 	var names := c.mutation.display_names()
 	hud_labels["mutations"].text = "Mutations: %s" % (", ".join(names) if names.size() > 0 else "none")
+	ep_bar.value = clampf(c.ep / c.ep_next, 0.0, 1.0) if c.ep_next > 0.0 else 0.0
+
+	# Real per-item progress bars instead of a flat x/OK - a bare "x" next
+	# to 3 items reads like "you need all 3," when the actual design (see
+	# Creature.can_migrate()) is "any ONE of these." Showing how close each
+	# one is makes that reachable-via-any-lane framing obvious at a glance.
 	var checklist := c.migration_checklist()
-	var parts: Array = []
-	for item in checklist:
-		parts.append("%s %s" % [item["label"], "OK" if item["done"] else "x"])
-	hud_labels["migration"].text = "Migrate via any one: %s" % " | ".join(parts)
+	for i in range(migration_rows.size()):
+		var entry = migration_rows[i]
+		if i < checklist.size():
+			var item: Dictionary = checklist[i]
+			entry["row"].visible = true
+			entry["label"].text = "%s%s" % [item["label"], "  OK" if item["done"] else ""]
+			entry["bar"].value = item["progress"]
+		else:
+			entry["row"].visible = false
 
 	if c.lineage_data and c.lineage_data.special_name != "":
 		var special_label: String = _SPECIAL_DISPLAY_NAMES.get(c.lineage_data.special_name, c.lineage_data.special_name)
@@ -179,6 +192,26 @@ func _hide_all() -> void:
 	gameover_panel.visible = false
 	message_label.visible = false
 	charge_bar.visible = false
+
+## Small progress bar with a consistent dark background + colored fill,
+## shared by the charge bar, EP bar, and per-item migration bars.
+func _make_bar(size: Vector2, fill_color: Color) -> ProgressBar:
+	var bar := ProgressBar.new()
+	bar.min_value = 0.0
+	bar.max_value = 1.0
+	bar.step = 0.01
+	bar.show_percentage = false
+	bar.size = size
+	bar.custom_minimum_size = size
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.05, 0.05, 0.05, 0.7)
+	bg.set_corner_radius_all(4)
+	bar.add_theme_stylebox_override("background", bg)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = fill_color
+	fill.set_corner_radius_all(4)
+	bar.add_theme_stylebox_override("fill", fill)
+	return bar
 
 func _panel(anchor_center: bool = true) -> PanelContainer:
 	var p := PanelContainer.new()
@@ -270,7 +303,7 @@ func _build_hud() -> void:
 
 	var v := VBoxContainer.new()
 	hud_panel.add_child(v)
-	var key_order := ["stats", "hp", "hunger", "mutations", "special", "migration"]
+	var key_order := ["stats", "hp", "hunger", "mutations", "special"]
 	for key in key_order:
 		var lbl := Label.new()
 		lbl.text = ""
@@ -282,8 +315,38 @@ func _build_hud() -> void:
 	hud_labels["hp"].add_theme_color_override("font_color", Color(1.0, 0.55, 0.5))
 	hud_labels["special"].add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
 	hud_labels["special"].visible = false
-	hud_labels["migration"].add_theme_font_size_override("font_size", 13)
-	hud_labels["migration"].add_theme_color_override("font_color", Color(0.9, 0.8, 0.5))
+
+	# Evolution progress (EP toward the next mutation draft) - previously
+	# had zero visibility at all; you'd just be surprised by a draft screen.
+	var ep_row := HBoxContainer.new()
+	v.add_child(ep_row)
+	var ep_label := Label.new()
+	ep_label.text = "Evolving: "
+	ep_label.add_theme_font_size_override("font_size", 13)
+	ep_label.add_theme_color_override("font_color", Color(0.75, 0.9, 1.0))
+	ep_row.add_child(ep_label)
+	ep_bar = _make_bar(Vector2(180, 14), Color(0.5, 0.85, 1.0))
+	ep_row.add_child(ep_bar)
+
+	var migration_header := Label.new()
+	migration_header.text = "Migrate via ANY ONE of:"
+	migration_header.add_theme_font_size_override("font_size", 13)
+	migration_header.add_theme_color_override("font_color", Color(0.9, 0.8, 0.5))
+	v.add_child(migration_header)
+
+	for i in range(4): # Highlands has the most items (4); others hide the extra row
+		var row := HBoxContainer.new()
+		row.visible = false
+		v.add_child(row)
+		var item_lbl := Label.new()
+		item_lbl.custom_minimum_size = Vector2(190, 0)
+		item_lbl.add_theme_font_size_override("font_size", 12)
+		item_lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.75))
+		item_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		row.add_child(item_lbl)
+		var item_bar := _make_bar(Vector2(110, 12), Color(0.6, 0.9, 0.5))
+		row.add_child(item_bar)
+		migration_rows.append({"row": row, "label": item_lbl, "bar": item_bar})
 
 	# Always-on reminder of the controls - lineage-select text is the only
 	# other place any of this is written down, and that's a one-time screen
@@ -317,23 +380,9 @@ func _build_hud() -> void:
 	event_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	add_child(event_label)
 
-	charge_bar = ProgressBar.new()
-	charge_bar.min_value = 0.0
-	charge_bar.max_value = 1.0
-	charge_bar.step = 0.01
-	charge_bar.show_percentage = false
-	charge_bar.size = Vector2(240, 20)
-	charge_bar.custom_minimum_size = charge_bar.size
+	charge_bar = _make_bar(Vector2(240, 20), Color(1.0, 0.75, 0.2))
 	charge_bar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	charge_bar.position += Vector2(-charge_bar.size.x / 2.0, -70)
-	var charge_bg := StyleBoxFlat.new()
-	charge_bg.bg_color = Color(0.05, 0.05, 0.05, 0.7)
-	charge_bg.set_corner_radius_all(4)
-	charge_bar.add_theme_stylebox_override("background", charge_bg)
-	var charge_fill := StyleBoxFlat.new()
-	charge_fill.bg_color = Color(1.0, 0.75, 0.2)
-	charge_fill.set_corner_radius_all(4)
-	charge_bar.add_theme_stylebox_override("fill", charge_fill)
 	charge_bar.visible = false
 	add_child(charge_bar)
 

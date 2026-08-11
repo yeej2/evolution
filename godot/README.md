@@ -58,6 +58,18 @@ hold-to-charge-pounce/tap-to-bite, E eat/interact, Q lineage special
   shows up when standing next to a rock or log, saying whether you can
   break/climb it and how. A persistent one-line control reminder is always
   visible too. See `game_ui.gd`'s `update_charge_bar()`/`_environment_hint()`.
+- **Migration checklist shows real progress bars, not a flat x/OK.**
+  `Creature.can_migrate()`/the migrate button were always "any ONE item
+  done," but a bare x/OK next to 3 items reads like "you need all 3" -
+  each item now has a 0..1 `progress` value and a real bar. The server
+  also now re-validates `can_migrate()` in `rpc_request_migrate()` instead
+  of just trusting that the client's button was only ever shown when
+  eligible. Added an EP/evolution progress bar too (previously zero
+  visibility into how close the next mutation draft was).
+- **Snapshot format changed again** (added `ep`/`ep_next`/`special_cooldown`
+  replication) - as always, both host and joiners need to be on the same
+  build or `rpc_snapshot` will throw an index-out-of-bounds trying to read
+  fields the other side's version doesn't send.
 - **Events:** Drought, Wildfire, Predator Surge (extra hunters spawn in and
   every predator presses attacks harder/further for the duration).
 - **Migration checklist is per-biome** (`Creature.migration_checklist()`):

@@ -390,9 +390,12 @@ func rpc_offer_mutation_draft(choices: Array) -> void:
 func rpc_request_migrate() -> void:
 	if not _is_authority():
 		return
-	# Vertical slice = Forest only, so "migrating" just means "you win".
+	# "Migrating" just means "you win" for this vertical slice. Re-validate
+	# server-side rather than trusting that the client's migrate button was
+	# only ever shown when actually eligible - the button is just UI, not
+	# an access control.
 	var c := _creature_for_sender()
-	if c:
+	if c and c.can_migrate():
 		_announce_player_died(c.entity_id) # reuse the end-of-run screen with a win flag read from hp>0
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -713,6 +716,8 @@ func rpc_snapshot(core: Array, extended: Array) -> void:
 		c.survived_drought = entry[10]
 		c.survived_wildfire = entry[11]
 		c.special_cooldown = entry[12]
+		c.ep = entry[13]
+		c.ep_next = entry[14]
 	if not extended.is_empty():
 		hud_refresh.emit()
 
