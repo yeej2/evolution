@@ -66,6 +66,41 @@ hold-to-charge-pounce/tap-to-bite, E eat/interact, Q lineage special
   of just trusting that the client's button was only ever shown when
   eligible. Added an EP/evolution progress bar too (previously zero
   visibility into how close the next mutation draft was).
+- **Escape interactions.** E doubles as a refuge action when there's no
+  food in reach: Climbing Claws lets you climb a nearby tree, Digging
+  Claws lets you burrow *anywhere*, and anyone can use a placed **Burrow**
+  object regardless of mutations. Sheltered (`Creature.refuge_time > 0`)
+  means immobile but genuinely imperceptible to wildlife AND other
+  players' bites - not just "hidden" in the stealth-mechanic sense. Water
+  is a passive refuge too: non-aquatic predators won't chase prey/players
+  into it. Auto-exits after `REFUGE_DURATION` (6s) with a cooldown after.
+- **Nests are no longer just fire fuel.** Standing at an unburned one
+  slowly heals you - the first non-destructive multi-purpose use for an
+  object that previously only existed to burn down in Wildfire.
+- **Wildlife wanders toward water instead of pure random walk when idle**
+  (`WildlifeAI._wander_dir`) - this is deliberately the entire "ecological
+  hotspots"/"dynamic migration" implementation: water becomes dangerous
+  because predators drift toward it too, not because of a separate
+  hotspot data structure to maintain.
+- **Sensory Evolution**: Keen Smell/Keen Hearing/Night Vision, a new
+  independent (non-branching, stackable) mutation family. These reveal
+  *information*, not a flat detection-range bonus - Keen Smell tells you
+  "a carcass is to the northeast," Keen Hearing tells you something's
+  actively hunting nearby, Night Vision negates a real sense-range penalty
+  players now have at night without it. See `game_ui.gd`'s
+  `_sensory_hint()`.
+- **Seed-based Forest profiles**: Lush/Dry/Flooded/Ancient, selectable
+  alongside Forest/Wetlands/Highlands. Same creature roster, same
+  migration checklist rules (they're all still "forest" underneath), same
+  mutation pool - what differs is resource/obstacle density and, for the
+  first time, *per-biome event weighting* (`WorldGenerator.
+  biome_event_weights()` - Dry Forest is ~4x more likely to roll a
+  Drought, Flooded Forest almost never does). This is the actual
+  design-validation surface for PLAN.md's test: **does the same starting
+  lineage evolve differently across these, or do players converge on the
+  same "optimal" picks regardless of world?** If the latter, the
+  environment isn't mattering enough yet and that's a real signal, not a
+  content gap to paper over with more biomes.
 - **Snapshot format changed again** (added `ep`/`ep_next`/`special_cooldown`
   replication) - as always, both host and joiners need to be on the same
   build or `rpc_snapshot` will throw an index-out-of-bounds trying to read

@@ -104,6 +104,9 @@ func _draw() -> void:
 			draw_circle(Vector2.ZERO, radius, c)
 		"nest":
 			draw_circle(Vector2.ZERO, radius, Color(0.55, 0.42, 0.29))
+		"burrow":
+			draw_circle(Vector2.ZERO, radius, Color(0.15, 0.11, 0.08))
+			draw_arc(Vector2.ZERO, radius, 0, TAU, 16, Color(0.35, 0.28, 0.18), 2.0)
 		"exit":
 			draw_circle(Vector2.ZERO, radius, color)
 			draw_arc(Vector2.ZERO, radius + 6, 0, TAU, 24, color, 3.0)

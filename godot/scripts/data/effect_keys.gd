@@ -36,6 +36,12 @@ const POUNCE_DISTANCE_MULT := "pounce_distance_mult"
 const CLIMB_SPEED_MULT := "climb_speed_mult"
 const CLIMB_OVER_LOGS := "climb_over_logs" ## ignore log collision entirely (WorldObject/Creature)
 const BREAK_ROCKS := "break_rocks" ## can bite through rocks to permanently clear them (World.gd)
+const BURROW := "burrow" ## can enter a refuge state anywhere, not just at a Burrow object (World.gd)
+
+# Sensory Evolution
+const KEEN_SMELL := "keen_smell" ## reveals carcass/prey direction beyond normal sense range
+const KEEN_HEARING := "keen_hearing" ## reveals nearby aggressive predators beyond normal sense range
+const NIGHT_VISION := "night_vision" ## negates the at-night sense_range penalty
 
 # StatusEffectComponent
 const POISON_IMMUNE := "poison_immune"

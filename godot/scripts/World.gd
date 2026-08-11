@@ -102,11 +102,7 @@ func host_start(seed_val: int = -1, biome: String = "forest") -> void:
 	if multiplayer.multiplayer_peer:
 		rpc_setup_world.rpc(seed_val, biome)
 	if _is_authority():
-		var counts: Dictionary
-		match biome:
-			"wetlands": counts = WorldGenerator.WETLANDS_SPAWN
-			"highlands": counts = WorldGenerator.HIGHLANDS_SPAWN
-			_: counts = WorldGenerator.FOREST_SPAWN
+		var counts: Dictionary = WorldGenerator._spawn_and_colors(biome)[0]
 		for i in range(int(counts["prey"])):
 			_spawn_wildlife("prey")
 		for i in range(int(counts["predator"])):
@@ -326,6 +322,8 @@ func rpc_request_pounce(charge: float) -> void:
 	c.start_pounce(clampf(charge, 0.0, 1.0))
 
 const EAT_INTERACT_RANGE := 14.0
+const REFUGE_TREE_RANGE := 20.0
+const REFUGE_BURROW_OBJECT_RANGE := 15.0
 
 @rpc("any_peer", "call_remote", "reliable")
 func rpc_request_eat() -> void:
@@ -334,6 +332,12 @@ func rpc_request_eat() -> void:
 	var c := _creature_for_sender()
 	if c == null:
 		return
+	if c.refuge_time > 0.0:
+		# Toggle off early - E is also how you come back out.
+		c.refuge_time = 0.0
+		c.refuge_type = ""
+		c.refuge_cooldown = Creature.REFUGE_COOLDOWN
+		return
 	# _nearest_food_to's 999.0 is just a search radius for "what's the
 	# closest food anywhere nearby" - it was never a proximity check by
 	# itself, so a client could request-eat food from almost anywhere on
@@ -341,6 +345,34 @@ func rpc_request_eat() -> void:
 	var f := _nearest_food_to(c, 999.0)
 	if f and c.global_position.distance_to(f.global_position) <= c.stats.radius + f.radius + EAT_INTERACT_RANGE:
 		consume_food_by_creature(f, c)
+		return
+	_try_enter_refuge(c)
+
+## Escape interactions (PLAN.md): a Razorcat is chasing you, so you climb a
+## tree, dive underwater (handled passively in wildlife_ai.gd - predators
+## won't follow non-aquatic prey into water), or burrow. Climbing needs a
+## specific mutation because it needs a specific object (a tree) to climb;
+## burrowing has two doors in, matching the "multi-purpose environment
+## object" idea - Digging Claws lets you do it anywhere, or anyone can use
+## a placed Burrow object instead.
+func _try_enter_refuge(c: Creature) -> void:
+	if c.dead or c.refuge_cooldown > 0.0:
+		return
+	if c.mutation.has_flag(EffectKeys.CLIMB_OVER_LOGS):
+		for o in objects_by_id.values():
+			if o.kind == "tree" and o.is_solid() and c.global_position.distance_to(o.global_position) < c.stats.radius + o.radius + REFUGE_TREE_RANGE:
+				c.refuge_type = "tree"
+				c.refuge_time = Creature.REFUGE_DURATION
+				return
+	if c.mutation.has_flag(EffectKeys.BURROW):
+		c.refuge_type = "burrow"
+		c.refuge_time = Creature.REFUGE_DURATION
+		return
+	for o in objects_by_id.values():
+		if o.kind == "burrow" and c.global_position.distance_to(o.global_position) < c.stats.radius + o.radius + REFUGE_BURROW_OBJECT_RANGE:
+			c.refuge_type = "burrow"
+			c.refuge_time = Creature.REFUGE_DURATION
+			return
 
 @rpc("any_peer", "call_remote", "reliable")
 func rpc_request_special() -> void:
@@ -466,7 +498,7 @@ func _nearest_bite_target(c: Creature, extra_reach: float = 50.0) -> Creature:
 	var best_d := INF
 	var reach := c.stats.radius + extra_reach
 	for other in creatures_by_id.values():
-		if other == c or other.dead:
+		if other == c or other.dead or other.refuge_time > 0.0:
 			continue
 		var d: float = c.global_position.distance_to(other.global_position)
 		if d < reach + other.stats.radius and d < best_d:
@@ -483,7 +515,7 @@ func _check_pounce_hits(c: Creature, delta: float) -> void:
 		return
 	var hit_radius_bonus: float = c.lineage_data.pounce_hit_radius_bonus if c.lineage_data else 20.0
 	for other in creatures_by_id.values():
-		if other == c or other.dead or c.pounce_hit_ids.has(other.entity_id):
+		if other == c or other.dead or other.refuge_time > 0.0 or c.pounce_hit_ids.has(other.entity_id):
 			continue
 		var d: float = c.global_position.distance_to(other.global_position)
 		if d < c.stats.radius + other.stats.radius + hit_radius_bonus:
@@ -672,9 +704,27 @@ func get_all_creatures() -> Array:
 func get_player_creatures() -> Array:
 	var out: Array = []
 	for c in creatures_by_id.values():
-		if c.is_player and not c.dead:
+		# Sheltered players (climbing/burrowed - see Creature.refuge_time)
+		# are meant to be genuinely imperceptible to wildlife, not just
+		# "hidden" in the stealth sense - this is the one place every AI
+		# perception check ultimately reads from, so filtering here covers
+		# fleeing prey, hunting predators, and territorial apex all at once.
+		if c.is_player and not c.dead and c.refuge_time <= 0.0:
 			out.append(c)
 	return out
+
+const NEST_REGEN_PER_SEC := 3.0
+
+## Nests were previously fire fuel and nothing else - a "multi-purpose
+## environment object" needs at least one non-destructive use too: resting
+## at one slowly heals, making them worth contesting as safe-ish territory
+## (unburned; a burned nest stops working, same logic as everything else
+## that fire permanently changes).
+func _creature_near_nest(c: Creature) -> bool:
+	for o in objects_by_id.values():
+		if o.kind == "nest" and not o.burned and c.global_position.distance_to(o.global_position) < c.stats.radius + o.radius:
+			return true
+	return false
 
 func get_prey_creatures() -> Array:
 	var out: Array = []
@@ -695,6 +745,8 @@ func _physics_process(delta: float) -> void:
 		c.in_water = _creature_in_water(c)
 		if c.is_player and c.in_water:
 			c.touched_water = true # Wetlands migration checklist
+		if c.is_player and not c.dead and _creature_near_nest(c):
+			c.stats.hp = minf(c.stats.max_hp, c.stats.hp + NEST_REGEN_PER_SEC * delta)
 		c.process_server_tick(delta)
 		if c.is_player and c.pounce_time > 0.0 and not c.dead:
 			_check_pounce_hits(c, delta)
@@ -793,6 +845,8 @@ func rpc_snapshot(core: Array, extended: Array) -> void:
 		c.special_cooldown = entry[12]
 		c.ep = entry[13]
 		c.ep_next = entry[14]
+		c.refuge_time = entry[15]
+		c.refuge_type = entry[16]
 	if not extended.is_empty():
 		hud_refresh.emit()
 
@@ -818,7 +872,7 @@ func _tick_events(delta: float) -> void:
 			WorldEventManager.start_event(self, current_event_id)
 			event_state_changed.emit(current_event_id, "active")
 	elif rng.randf() < 0.003 * delta:
-		var candidate := EventDB.random_id(rng)
+		var candidate := EventDB.weighted_random_id(rng, WorldGenerator.biome_event_weights(biome_id))
 		var ed: WorldEventData = EventDB.get_event(candidate)
 		if ed.warmup > 0.0:
 			pending_event_id = candidate

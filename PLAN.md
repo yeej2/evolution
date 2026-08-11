@@ -284,15 +284,46 @@ feedback (a real remote session over playit.gg) directly drove this -
 several mutations had claimed an environmental interaction in their
 flavor text for a while without one actually existing in code.
 
-### 9.6 Next environmental step — not yet built
+### 9.6 Environmental systems pass — Built
 
-The rock/log pattern above is deliberately small and proven before
-expanding it. The natural next instance discussed: a terrain feature
-(e.g. a ditch/chasm) that's only crossable with an aerial mutation
-("wings"), with brute-force alternatives always available for everyone
-else (route around, or spend time knocking down a tree to bridge it).
-This is bigger than rocks/logs - it implies a new terrain kind and a new
-movement mode (flight), not just a new bypass rule on an existing solid
-object - so it's scoped as its own future pass rather than bolted on
-here.
+Six systems, from a design-review pass after the first real remote
+playtest:
+
+1. **Escape interactions** - climb a tree (Climbing Claws), burrow
+   anywhere (Digging Claws) or at a placed Burrow object (anyone), dive
+   into water (safe from non-aquatic predators). Sheltered = immobile but
+   genuinely imperceptible to wildlife and other players, not just
+   "stealth-hidden."
+2. **Ecological hotspots** + 3. **Dynamic migration** - implemented as one
+   change rather than two systems: idle wildlife wander now drifts toward
+   the nearest water hole instead of pure random walk, for both prey and
+   predators. Water becomes dangerous because predators camp near it, not
+   because of a separate hotspot data structure.
+4. **Multi-purpose environment objects** - Nest gained a real
+   non-destructive use (passive regen) instead of only being fire fuel;
+   Burrow is a new object type usable by anyone. Water/Tree/Log/Rock were
+   already multi-purpose from the rock/log pass (9.5).
+5. **Sensory Evolution** - Keen Smell, Keen Hearing, Night Vision. These
+   reveal real information (a direction, a warning) rather than a flat
+   detection-range number, and Night Vision only matters because players
+   now have a real at-night sense-range penalty to counter.
+6. **Seed-based Forest profiles** - Lush/Dry/Flooded/Ancient, same
+   creatures/mutations/checklist rules as Forest, different resource
+   density and (new) per-biome event-weighting.
+
+**The design-validation test to actually run now** (this is the
+requirement, not a nice-to-have): take the same starting lineage into a
+few of these profiles. Does it end up evolving differently because the
+world made different traits valuable? Or do players converge on the same
+"optimal" mutations regardless of which world they're in? If the latter,
+the environment doesn't matter enough yet, and that's the next thing to
+fix - not "add more content."
+
+### 9.7 Still not built
+
+A terrain feature (e.g. a ditch/chasm) only crossable with an aerial
+mutation ("wings"), with brute-force alternatives for everyone else
+(route around, or spend time knocking down a tree to bridge it). Bigger
+than everything in 9.6 - implies a new terrain kind and movement mode
+(flight), not just a new bypass rule on an existing solid object.
 

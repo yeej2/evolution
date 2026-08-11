@@ -163,8 +163,11 @@ const _SPECIAL_DISPLAY_NAMES := {
 ## A nearby obstacle should tell you why it's stopping you (or how you're
 ## bypassing it) instead of just being a silent wall - this is the whole
 ## point of making mutations gate the environment, per PLAN.md: if nobody
-## notices the interaction exists, it might as well not.
+## notices the interaction exists, it might as well not. Falls back to a
+## sensory hint (Keen Smell/Hearing) when there's no obstacle to explain.
 func _environment_hint(c: Creature, world: World) -> String:
+	if c.refuge_time > 0.0:
+		return "Sheltered (%s) - press E to come out early. %.0fs left." % [c.refuge_type, c.refuge_time]
 	var reach: float = c.stats.radius + 45.0
 	for o in world.objects_by_id.values():
 		if not o.is_solid():
@@ -179,7 +182,57 @@ func _environment_hint(c: Creature, world: World) -> String:
 			if c.mutation.has_flag(EffectKeys.CLIMB_OVER_LOGS):
 				return "Climbing Claws lets you pass over this log freely."
 			return "A fallen log blocks the way. Climbing Claws lets you pass, or fire can burn it open."
+	for o in world.objects_by_id.values():
+		if o.kind == "burrow" and c.global_position.distance_to(o.global_position) < reach + o.radius:
+			return "A burrow - press E to shelter here (anyone can use this one)."
+	return _sensory_hint(c, world)
+
+## Information, not a number - Keen Smell/Hearing don't say "+50 range,"
+## they tell you something you couldn't otherwise know. Purely a display
+## concern (no gameplay effect happens here), so this is safe to compute
+## client-side even though it reads world state - every peer already has
+## full creature/food positions with no interest management yet anyway.
+func _sensory_hint(c: Creature, world: World) -> String:
+	var night_penalty: float = 0.5 if (world.is_night() and not c.mutation.has_flag(EffectKeys.NIGHT_VISION)) else 1.0
+	if c.mutation.has_flag(EffectKeys.KEEN_SMELL):
+		var range_smell: float = c.stats.sense_range * 3.0 * night_penalty
+		var best: FoodItem = null
+		var best_d := range_smell
+		for f in world.food_by_id.values():
+			if f.kind != "carcass":
+				continue
+			var d: float = c.global_position.distance_to(f.global_position)
+			if d < best_d:
+				best_d = d
+				best = f
+		if best:
+			return "You smell a carcass %s." % _compass_direction(c.global_position, best.global_position)
+	if c.mutation.has_flag(EffectKeys.KEEN_HEARING):
+		var range_hear: float = c.stats.sense_range * 2.5 * night_penalty
+		var best_c: Creature = null
+		var best_hd := range_hear
+		for other in world.creatures_by_id.values():
+			if other == c or other.dead or other.is_player or not other.species_data:
+				continue
+			if other.species_data.creature_type == "prey":
+				continue
+			if other.telegraph <= 0.0 and other.attack_target == null:
+				continue # only "aggressive right now," not just "exists somewhere"
+			var d: float = c.global_position.distance_to(other.global_position)
+			if d < best_hd:
+				best_hd = d
+				best_c = other
+		if best_c:
+			return "You hear something hunting %s." % _compass_direction(c.global_position, best_c.global_position)
 	return ""
+
+func _compass_direction(from: Vector2, to: Vector2) -> String:
+	var dirs := ["east", "southeast", "south", "southwest", "west", "northwest", "north", "northeast"]
+	var angle: float = from.direction_to(to).angle()
+	var idx: int = int(round(angle / (PI / 4.0))) % 8
+	if idx < 0:
+		idx += 8
+	return "to the " + dirs[idx]
 
 # ------------------------------------------------------------------
 # Building
@@ -244,10 +297,11 @@ func _build_menu() -> void:
 	var host_row := HBoxContainer.new()
 	v.add_child(host_row)
 	var biome_select := OptionButton.new()
-	biome_select.add_item("Forest", 0)
-	biome_select.add_item("Wetlands", 1)
-	biome_select.add_item("Highlands", 2)
-	biome_select.set_meta("ids", ["forest", "wetlands", "highlands"])
+	var biome_ids := ["forest", "wetlands", "highlands", "forest_lush", "forest_dry", "forest_flooded", "forest_ancient"]
+	var biome_names := ["Forest", "Wetlands", "Highlands", "Forest: Lush", "Forest: Dry", "Forest: Flooded", "Forest: Ancient"]
+	for i in range(biome_ids.size()):
+		biome_select.add_item(biome_names[i], i)
+	biome_select.set_meta("ids", biome_ids)
 	biome_select.selected = 0
 	host_row.add_child(biome_select)
 	var host_btn := Button.new()

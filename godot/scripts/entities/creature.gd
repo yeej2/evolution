@@ -36,6 +36,16 @@ var flurry_hit_timer: float = 0.0 ## style=="flurry" only - see World._check_flu
 
 var bite_cooldown: float = 0.0
 var special_cooldown: float = 0.0 ## Q ("dodge" input) - lineage special, e.g. Grazer's Share Sustenance
+
+# Refuge ("escape interactions" - climb a tree, burrow, take shelter): a
+# temporary, immobile, imperceptible-to-wildlife state. See World.gd's
+# rpc_request_eat()/_try_enter_refuge() for how it's entered, and
+# get_player_creatures()/hidden_check() below for how it's respected.
+var refuge_time: float = 0.0
+var refuge_type: String = "" ## "tree" or "burrow"
+var refuge_cooldown: float = 0.0
+const REFUGE_DURATION := 6.0
+const REFUGE_COOLDOWN := 5.0
 var telegraph: float = 0.0
 var attack_target: Creature = null
 var last_attacker_id: int = -1
@@ -86,7 +96,10 @@ func setup_as_player(id: int, peer_id: int, lineage: String) -> void:
 	stats.base_mass = lineage_data.mass
 	stats.base_radius = lineage_data.radius
 	stats.base_bite_damage = lineage_data.base_bite_damage
-	stats.base_sense_range = 0.0
+	# Players never had a real baseline sense range (always 0) - harmless
+	# while nothing read it, but Sensory Evolution mutations need a real
+	# number to extend from.
+	stats.base_sense_range = 170.0
 	recompute_stats()
 	stats.hp = stats.max_hp
 	name = "Player_%d" % id
@@ -145,6 +158,14 @@ func process_server_tick(delta: float) -> void:
 		bite_cooldown -= delta
 	if special_cooldown > 0.0:
 		special_cooldown -= delta
+	if refuge_time > 0.0:
+		refuge_time -= delta
+		if refuge_time <= 0.0:
+			refuge_time = 0.0
+			refuge_type = ""
+			refuge_cooldown = REFUGE_COOLDOWN
+	elif refuge_cooldown > 0.0:
+		refuge_cooldown -= delta
 
 	if is_player:
 		hidden_check(delta)
@@ -157,6 +178,9 @@ func process_server_tick(delta: float) -> void:
 		died.emit(self)
 
 func hidden_check(delta: float) -> bool:
+	if refuge_time > 0.0:
+		status.hidden = true
+		return true
 	var moving := move_input.length() > 0.05
 	if moving:
 		hidden_ready_time = 0.0
@@ -171,6 +195,11 @@ func hidden_check(delta: float) -> bool:
 var _move_vel: Vector2 = Vector2.ZERO ## smoothed toward the desired velocity by lineage handling
 
 func _process_player_movement(delta: float) -> void:
+	if refuge_time > 0.0:
+		_move_vel = Vector2.ZERO
+		velocity = knockback_impulse # sheltered, but a hit that connects anyway should still shove you
+		move_and_slide()
+		return
 	var v := Vector2.ZERO
 	if pounce_time > 0.0:
 		pounce_time -= delta
@@ -291,6 +320,6 @@ func to_snapshot_core() -> Array:
 	return [entity_id, global_position.x, global_position.y, facing, stats.hp, stats.max_hp, flags, telegraph]
 
 ## Slow-changing player-only fields, broadcast at a much lower rate.
-## [id, mass, speed, mutations, generation, hunger, energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next]
+## [id, mass, speed, mutations, generation, hunger, energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next, refuge_time, refuge_type]
 func to_snapshot_extended() -> Array:
-	return [entity_id, stats.mass, stats.speed, mutation.owned.duplicate(), generation, hunger.hunger, hunger.energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next]
+	return [entity_id, stats.mass, stats.speed, mutation.owned.duplicate(), generation, hunger.hunger, hunger.energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next, refuge_time, refuge_type]

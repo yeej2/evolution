@@ -81,7 +81,7 @@ static func _process_prey(c: Creature, world: Node, delta: float) -> void:
 		return
 
 	# wander, with herd clustering for niblet-like species
-	var dir := _wander_dir(c, delta)
+	var dir := _wander_dir(c, delta, world)
 	if c.species_data.herd:
 		var packmate := _nearest(c, world.get_prey_creatures(), 120.0)
 		if packmate:
@@ -101,10 +101,23 @@ static func _nearest_food(c: Creature, world: Node, kind: String, max_range: flo
 	return best
 
 static var _wander_dirs: Dictionary = {}
-static func _wander_dir(c: Creature, delta: float) -> Vector2:
+
+## Idle wandering isn't pure random walk - it drifts toward the nearest
+## water hole (a "hotspot"), which is what actually makes water dangerous
+## rather than decorative: prey linger near it out of the same pull, and
+## predators camping near it get fed. This is the whole "ecological
+## hotspots"/"dynamic migration" idea in one small, honest change rather
+## than a separate hotspot data structure to maintain.
+static func _wander_dir(c: Creature, delta: float, world: Node = null) -> Vector2:
 	if not _wander_dirs.has(c.entity_id) or randf() < 0.02:
 		_wander_dirs[c.entity_id] = Vector2(randf_range(-1, 1), randf_range(-1, 1)).normalized()
-	return _wander_dirs.get(c.entity_id, Vector2.ZERO)
+	var dir: Vector2 = _wander_dirs.get(c.entity_id, Vector2.ZERO)
+	if world:
+		var water := _nearest_water(c, world)
+		if water and c.global_position.distance_to(water.global_position) > water.radius + 50.0:
+			var toward: Vector2 = (water.global_position - c.global_position).normalized()
+			dir = (dir * 0.65 + toward * 0.35).normalized()
+	return dir
 
 # --- predators ---
 
@@ -135,8 +148,12 @@ static func _process_predator(c: Creature, world: Node, delta: float) -> void:
 
 	var prey_list: Array = world.get_prey_creatures()
 	var target: Creature = _nearest(c, prey_list, c.stats.sense_range) as Creature
+	if target and not c.species_data.aquatic and world._creature_in_water(target):
+		target = null # dove into water - not this predator's problem unless it's aquatic too
 	var players: Array = world.get_player_creatures()
 	var nearest_player: Creature = _nearest(c, players, 999999.0) as Creature
+	if nearest_player and not c.species_data.aquatic and world._creature_in_water(nearest_player):
+		nearest_player = null
 	var dplayer := nearest_player.global_position.distance_to(c.global_position) if nearest_player else 999999.0
 
 	# During a Predator Surge, hunters press attacks against much bigger prey
@@ -177,7 +194,7 @@ static func _process_predator(c: Creature, world: Node, delta: float) -> void:
 		c.velocity = (c.global_position - nearest_player.global_position).normalized() * sp * 1.2
 		return
 
-	c.velocity = _wander_dir(c, delta) * sp * 0.35
+	c.velocity = _wander_dir(c, delta, world) * sp * 0.35
 
 static func _resolve_telegraphed_attack(c: Creature, world: Node) -> void:
 	var t: Creature = c.attack_target
@@ -235,4 +252,4 @@ static func _process_apex(c: Creature, world: Node, delta: float) -> void:
 			c.attack_target = nearest_player
 			c.telegraph = 0.5
 		return
-	c.velocity = _wander_dir(c, delta) * c.stats.speed * 0.3
+	c.velocity = _wander_dir(c, delta, world) * c.stats.speed * 0.3

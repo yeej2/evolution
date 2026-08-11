@@ -18,6 +18,22 @@ func random_id(rng: RandomNumberGenerator) -> String:
 	var ids := all_ids()
 	return ids[rng.randi_range(0, ids.size() - 1)]
 
+## Weighted pick, for a seed-based environmental profile that should feel a
+## specific kind of dangerous (Dry Forest gets droughts far more often)
+## without needing its own bespoke event list. `weights` is event_id ->
+## multiplier, missing = 1.0 (see WorldGenerator.biome_event_weights()).
+func weighted_random_id(rng: RandomNumberGenerator, weights: Dictionary) -> String:
+	var ids := all_ids()
+	var total := 0.0
+	for id in ids:
+		total += float(weights.get(id, 1.0))
+	var r := rng.randf() * total
+	for id in ids:
+		r -= float(weights.get(id, 1.0))
+		if r <= 0.0:
+			return id
+	return ids[ids.size() - 1]
+
 func _def(id: String, name: String, duration: float, warmup: float, color: Color, params: Dictionary = {}) -> void:
 	var e := WorldEventData.new()
 	e.id = id

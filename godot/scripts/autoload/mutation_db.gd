@@ -105,9 +105,9 @@ func _build() -> void:
 		{EffectKeys.SPEED_MULT: 1.08, EffectKeys.CLIMB_SPEED_MULT: 1.5, EffectKeys.CLIMB_OVER_LOGS: true})
 	_def("digging_claws", "Digging Claws", "Movement", "claws", 2,
 		"Claws widen for burrowing through soft ground.",
-		"Can burrow to hide, dig up roots", "Slower on open ground",
+		"Can burrow to hide (E) anywhere, not just at a Burrow", "Slower on open ground",
 		["claws"], _others(claws_branch, "digging_claws"),
-		{EffectKeys.SPEED_MULT: 0.95})
+		{EffectKeys.SPEED_MULT: 0.95, EffectKeys.BURROW: true})
 	_def("grasping_claws", "Grasping Claws", "Control", "claws", 2,
 		"Claws gain dexterity for grappling prey.",
 		"Pounce holds target briefly", "None",
@@ -218,6 +218,26 @@ func _build() -> void:
 		"+30% swim speed", "-5% land speed",
 		["fins"], _others(fins_branch, "deep_diver"),
 		{EffectKeys.WATER_SPEED_MULT: 1.3, EffectKeys.SPEED_MULT: 0.95})
+
+	# ---- Sensory Evolution (independent, not mutually exclusive - each is
+	# its own standalone tier-1 sense rather than a branching family, since
+	# stacking multiple senses over generations is the point). These reveal
+	# real information rather than a flat detection-range number: Keen
+	# Smell/Hearing surface an environment hint pointing at something you
+	# couldn't otherwise perceive; Night Vision removes a real penalty that
+	# only exists because this mutation exists to counter it.
+	_def("keen_smell", "Keen Smell", "Senses", "senses", 1,
+		"Scent carries meaning - carcasses, wounds, water.",
+		"Sense carcasses/hunted prey from much farther away", "None",
+		[], [], {EffectKeys.KEEN_SMELL: true})
+	_def("keen_hearing", "Keen Hearing", "Senses", "senses", 1,
+		"Every rustle and footstep becomes information.",
+		"Sense nearby aggressive predators before they're in range", "None",
+		[], [], {EffectKeys.KEEN_HEARING: true})
+	_def("night_vision", "Night Vision", "Senses", "senses", 1,
+		"Low light stops being a handicap.",
+		"No sense-range penalty at night", "None",
+		[], [], {EffectKeys.NIGHT_VISION: true})
 
 	# ---- Diet trio (independent of family trees, mutually exclusive) ----
 	var diet_branch := ["diet_carnivore", "diet_herbivore", "diet_scavenger"]
