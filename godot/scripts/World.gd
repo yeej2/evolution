@@ -67,6 +67,8 @@ func send_full_state_to_peer(peer_id: int) -> void:
 			rpc_update_object.rpc_id(peer_id, o.object_id, "burned", true)
 		if o.open:
 			rpc_update_object.rpc_id(peer_id, o.object_id, "open", true)
+		if o.broken:
+			rpc_update_object.rpc_id(peer_id, o.object_id, "broken", true)
 	var original_food_ids: Array = []
 	for id in food_by_id.keys():
 		if id < 1000:
@@ -287,7 +289,28 @@ func rpc_request_bite() -> void:
 	var target := _nearest_bite_target(c)
 	if target:
 		server_resolve_bite(c, target)
+	elif not _try_break_rock(c):
+		pass # bit at nothing - no cooldown waste beyond the normal one below
 	c.bite_cooldown = 0.4
+
+## Strong Jaws' whole point is a real, permanent way through an obstacle
+## that isn't available to everyone - a rock only cracks under a bite from
+## something with EffectKeys.BREAK_ROCKS, and it takes several hits, so it's
+## a genuine choice to invest in Jaws rather than a free pass.
+func _try_break_rock(c: Creature) -> bool:
+	if not c.mutation.has_flag(EffectKeys.BREAK_ROCKS):
+		return false
+	var reach := c.stats.radius + 40.0
+	for o in objects_by_id.values():
+		if o.kind != "rock" or o.broken:
+			continue
+		if c.global_position.distance_to(o.global_position) < reach + o.radius:
+			o.rock_hp -= c.stats.bite_damage
+			o.queue_redraw()
+			if o.rock_hp <= 0.0:
+				_broadcast_update_object(o.object_id, "broken", true)
+			return true
+	return false
 
 @rpc("any_peer", "call_remote", "reliable")
 func rpc_request_pounce(charge: float) -> void:
@@ -308,6 +331,37 @@ func rpc_request_eat() -> void:
 	var f := _nearest_food_to(c, 999.0)
 	if f:
 		consume_food_by_creature(f, c)
+
+@rpc("any_peer", "call_remote", "reliable")
+func rpc_request_special() -> void:
+	if not _is_authority():
+		return
+	var c := _creature_for_sender()
+	if c == null or c.dead or c.special_cooldown > 0.0 or c.lineage_data == null:
+		return
+	match c.lineage_data.special_name:
+		"share_sustenance":
+			_try_share_sustenance(c)
+
+## Grazer's support identity: feed a nearby ally out of your own hunger
+## reserve. Deliberately lossy (spends more than it gives) so it's a real
+## sacrifice, not a free group-wide hunger reset - the point is "bring a
+## Grazer along and it can bail someone out," not "hunger stops mattering."
+func _try_share_sustenance(c: Creature) -> void:
+	var ally: Creature = null
+	var best_d := 90.0
+	for other in creatures_by_id.values():
+		if other == c or other.dead or not other.is_player:
+			continue
+		var d: float = c.global_position.distance_to(other.global_position)
+		if d < best_d:
+			best_d = d
+			ally = other
+	if ally == null:
+		return
+	c.hunger.hunger = minf(100.0, c.hunger.hunger + 15.0)
+	ally.hunger.hunger = maxf(0.0, ally.hunger.hunger - 20.0)
+	c.special_cooldown = c.lineage_data.special_cooldown
 
 @rpc("any_peer", "call_remote", "reliable")
 func rpc_choose_mutation(mutation_id: String) -> void:
@@ -410,6 +464,12 @@ func _check_flurry_hits(c: Creature, delta: float) -> void:
 	c.flurry_hit_timer = c.lineage_data.flurry_interval
 	var target := _nearest_bite_target(c, c.lineage_data.pounce_hit_radius_bonus)
 	if target:
+		c.facing = c.global_position.direction_to(target.global_position).angle()
+		# Standing perfectly still for the whole flurry read as static/dead
+		# even though several hits were landing - a real flurry should look
+		# like a burst of quick jabs, so nudge visibly toward the target on
+		# every landed hit instead of one silent stationary tick.
+		c.global_position += c.global_position.direction_to(target.global_position) * 9.0
 		CombatResolver.resolve_bite(c, target, _pounce_damage_mult(c), _pounce_knockback_mult(c))
 
 func _pounce_damage_mult(c: Creature) -> float:
@@ -507,6 +567,8 @@ func _apply_update_object(id: int, prop: String, value: bool) -> void:
 		o.set_burned(value)
 	elif prop == "open":
 		o.set_open(value)
+	elif prop == "broken":
+		o.set_broken(value)
 
 @rpc("authority", "call_remote", "reliable")
 func rpc_update_object(id: int, prop: String, value: bool) -> void:

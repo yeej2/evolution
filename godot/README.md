@@ -12,8 +12,10 @@ godot --path godot
 ```
 
 Pick a biome next to **Host**, then have a second player **Join** at your
-LAN/localhost address and pick a lineage. Controls: WASD move, mouse aim,
-Shift sprint, Space hold-to-charge-pounce/tap-to-bite, E eat/interact.
+LAN/localhost address (or `host:port` for a tunnel like playit.gg) and pick
+a lineage. Controls: WASD move, mouse aim, Shift sprint, Space
+hold-to-charge-pounce/tap-to-bite, E eat/interact, Q lineage special
+(currently only Grazer's Share Sustenance).
 
 ## Content
 
@@ -23,15 +25,32 @@ Shift sprint, Space hold-to-charge-pounce/tap-to-bite, E eat/interact.
 - **Mutation families:** Claws, Legs, Hide (now including Fur, a 5th
   cold-hardy tier-2 branch alongside Insulation), Venom, Jaws, Fins
   (aquatic), plus the Carnivore/Herbivore/Scavenger diet trio.
-- **Lineages have distinct attack/movement identities, not just stats.**
-  Stalker's hold-to-charge is a fast, long, precise Ambush Lunge; Grazer's
-  is a slow, sustained Shoulder Charge that barely hits harder than a
-  normal bite but has huge knockback; Titan's Ground Slam barely travels
-  at all but roughly doubles bite damage at full charge with massive
-  knockback. Movement also has real per-lineage momentum now (`LineageData.
-  handling`) instead of instant velocity snapping - Stalker turns on a
-  dime, Titan carries weight into turns. See `LineageData`'s `pounce_*`/
-  `handling` fields and `Creature._process_player_movement()`.
+- **Lineages have distinct roles, not just stats.** Stalker is a glass
+  cannon: fast, fragile (55 HP), and its hold-to-charge is Flurry Strike - a
+  rapid multi-hit combo that plants it in place rather than a dash, so
+  committing to it is genuinely risky. Grazer is support: a mediocre
+  fighter (Shoulder Charge barely out-damages a normal bite, though the
+  knockback is huge) whose real value is Q - Share Sustenance, feeding a
+  nearby ally out of its own hunger reserve at a loss. Titan is a tank:
+  Ground Slam roughly doubles bite damage at full charge, and Brace gives
+  it a flat 20% damage reduction on everything it takes, all the time.
+  Movement also has real per-lineage momentum (`LineageData.handling`)
+  instead of instant velocity snapping - Stalker turns on a dime, Titan
+  carries weight into turns. See `LineageData` and
+  `Creature._process_player_movement()`.
+- **The environment now actually gates evolution, not just flavor text.**
+  Several mutations always *claimed* an environmental interaction they
+  didn't mechanically have - Strong Jaws said "break rocks," Climbing Claws
+  said "climb faster," and neither did anything. Now: rocks are permanent
+  obstacles unless something with Strong Jaws bites through one (several
+  hits, not instant - see `World._try_break_rock()`), and fallen logs block
+  everyone except a Climbing Claws creature, which ignores them entirely
+  (`WorldObject.LAYER_LOG`, `Creature._update_collision_shape()`). Both are
+  permanent, server-authoritative, and replicated the same way burning a
+  tree or opening a log in a wildfire already was. This is the intended
+  general pattern going forward: a real obstacle with more than one honest
+  way through it (route around it, or invest in the mutation that clears
+  it), not a stat check.
 - **Events:** Drought, Wildfire, Predator Surge (extra hunters spawn in and
   every predator presses attacks harder/further for the duration).
 - **Migration checklist is per-biome** (`Creature.migration_checklist()`):

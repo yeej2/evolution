@@ -300,6 +300,9 @@ func _physics_process(_delta: float) -> void:
 	if Input.is_action_just_pressed("eat"):
 		_send_eat()
 
+	if Input.is_action_just_pressed("dodge"):
+		_send_special()
+
 func _delta_charge() -> float:
 	return get_physics_process_delta_time() / 0.9
 
@@ -326,3 +329,9 @@ func _send_eat() -> void:
 		world.rpc_request_eat()
 	else:
 		world.rpc_request_eat.rpc_id(1)
+
+func _send_special() -> void:
+	if NetworkManager.is_hosting or multiplayer.multiplayer_peer == null:
+		world.rpc_request_special()
+	else:
+		world.rpc_request_special.rpc_id(1)

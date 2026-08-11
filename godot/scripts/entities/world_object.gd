@@ -12,9 +12,21 @@ var kind: String = "tree" ## tree, rock, water, log, nest, exit
 var radius: float = 20.0
 var burned: bool = false
 var open: bool = false
+var broken: bool = false ## rocks only - see set_broken()/World._try_break_rock()
 var color: Color = Color.WHITE
 
+## Rock-only, server-authoritative durability. Never replicated tick-by-tick
+## (clients don't need to see partial cracking) - only the final "broken"
+## flip goes out, the same way "burned"/"open" already do.
+var rock_hp: float = 30.0
+
 var _body: StaticBody2D = null
+
+## Logs sit on their own collision layer, separate from trees/rocks, so a
+## creature can selectively ignore JUST logs (Climbing Claws) without also
+## ignoring rocks/trees - see Creature._update_collision_shape().
+const LAYER_TREE_ROCK := 4
+const LAYER_LOG := 16
 
 func _ready() -> void:
 	_rebuild_collision()
@@ -34,6 +46,8 @@ func is_solid() -> bool:
 		return false
 	if kind == "log" and open:
 		return false
+	if kind == "rock" and broken:
+		return false
 	return kind in ["tree", "rock", "log"]
 
 func _rebuild_collision() -> void:
@@ -43,7 +57,7 @@ func _rebuild_collision() -> void:
 	if not is_solid():
 		return
 	_body = StaticBody2D.new()
-	_body.collision_layer = 4
+	_body.collision_layer = LAYER_LOG if kind == "log" else LAYER_TREE_ROCK
 	_body.collision_mask = 0
 	var shape := CollisionShape2D.new()
 	var circle := CircleShape2D.new()
@@ -62,6 +76,11 @@ func set_open(value: bool) -> void:
 	_rebuild_collision()
 	queue_redraw()
 
+func set_broken(value: bool) -> void:
+	broken = value
+	_rebuild_collision()
+	queue_redraw()
+
 func _draw() -> void:
 	if burned and kind in ["tree", "nest"]:
 		return
@@ -70,7 +89,14 @@ func _draw() -> void:
 			draw_circle(Vector2.ZERO, radius, Color(0.29, 0.23, 0.13))
 			draw_circle(Vector2(0, -6), radius * 0.9, color)
 		"rock":
-			draw_circle(Vector2.ZERO, radius, color)
+			if broken:
+				draw_circle(Vector2.ZERO, radius, Color(color, 0.3))
+			else:
+				draw_circle(Vector2.ZERO, radius, color)
+				if rock_hp < 30.0:
+					# Cracking feedback while a Jaws creature is chewing
+					# through it, not just an instant pop from full to gone.
+					draw_circle(Vector2.ZERO, radius * 0.5, Color(0.1, 0.1, 0.1, clampf(1.0 - rock_hp / 30.0, 0.0, 0.7)))
 		"water":
 			draw_circle(Vector2.ZERO, radius, color)
 		"log":

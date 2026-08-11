@@ -15,7 +15,8 @@ func all_ids() -> Array:
 
 func _def(id: String, name: String, radius: float, hp: float, speed: float, mass: float,
 		hunger_rate: float, color: Color, bonus: String, weights: Dictionary = {},
-		attack: Dictionary = {}, handling: float = 1.0, bite_damage: float = 6.0) -> void:
+		attack: Dictionary = {}, handling: float = 1.0, bite_damage: float = 6.0,
+		damage_reduction_pct: float = 0.0, special_name: String = "") -> void:
 	var l := LineageData.new()
 	l.id = id
 	l.display_name = name
@@ -29,6 +30,8 @@ func _def(id: String, name: String, radius: float, hp: float, speed: float, mass
 	l.mutation_weights = weights
 	l.handling = handling
 	l.base_bite_damage = bite_damage
+	l.damage_reduction_pct = damage_reduction_pct
+	l.special_name = special_name
 	if attack.has("style"): l.attack_style = attack["style"]
 	if attack.has("name"): l.attack_name = attack["name"]
 	if attack.has("speed_base"): l.pounce_speed_base = attack["speed_base"]
@@ -56,24 +59,27 @@ func _build() -> void:
 			"duration": 0.65, "damage_base": 0.55, "damage_charge_mult": 0.25,
 			"knockback_mult": 0.4, "hit_radius_bonus": 8.0, "flurry_interval": 0.13},
 		1.45, 8.0)
-	# Grazer: bulk shove, not a hunter's strike. Barely more damage than a
-	# normal bite, but a long sustained charge with huge knockback - good for
-	# clearing space or shoving something into water/off a ledge, not
-	# winning a fight outright. Heavier, less responsive turning than Stalker.
+	# Grazer: support, not a hunter. Its charge is still a bulk shove (barely
+	# more damage than a normal bite, huge knockback), but its identity is
+	# Share Sustenance (Q): it can feed a nearby ally out of its own hunger
+	# reserve at a loss - a real reason to bring one along in co-op even
+	# though it's the worst 1v1 combatant of the three.
 	_def("grazer", "Grazer", 15.0, 120.0, 110.0, 1.0, 1.1, Color("6cb06c"),
-		"Plants restore extra hunger. Sustained shoulder charge, huge shove.",
+		"Plants restore extra hunger. Sustained shoulder charge, huge shove. Q: feed a nearby ally from your own reserves.",
 		{"claws": 0.7, "legs": 0.8, "venom": 0.5, "hide": 1.5, "diet_herbivore": 2.0, "ruminant_gut": 1.8},
 		{"style": "charge", "name": "Shoulder Charge", "speed_base": 260.0, "speed_charge_mult": 90.0,
 			"duration": 0.55, "damage_base": 1.0, "damage_charge_mult": 0.5,
 			"knockback_mult": 2.2, "hit_radius_bonus": 26.0},
-		0.85)
-	# Titan: barely moves at all when it commits - this isn't a gap-closer,
-	# it's a stationary slam that punishes anything that gets close. Full
-	# charge roughly doubles the damage of a normal bite. Sluggish turning.
+		0.85, 6.0, 0.0, "share_sustenance")
+	# Titan: a real tank, not just "the one with more HP." Ground Slam barely
+	# moves and roughly doubles bite damage at full charge, but the defining
+	# trait is Brace - a flat, always-on damage reduction from every hit
+	# taken, so it's meaningfully harder to actually kill, not just bulkier
+	# on paper. Sluggish turning.
 	_def("titan", "Titan", 22.0, 180.0, 82.0, 1.8, 2.1, Color("9e6e3e"),
-		"Larger and tougher, but needs more food. Slow, devastating ground slam.",
+		"Larger and tougher, but needs more food. Slow, devastating ground slam. Brace: takes 20% less damage from every hit.",
 		{"claws": 0.6, "legs": 0.6, "hide": 1.5, "jaws": 1.5, "bone_plate": 1.8, "diet_carnivore": 1.5},
 		{"style": "slam", "name": "Ground Slam", "speed_base": 90.0, "speed_charge_mult": 30.0,
 			"duration": 0.5, "damage_base": 1.4, "damage_charge_mult": 1.8,
 			"knockback_mult": 2.6, "hit_radius_bonus": 34.0},
-		0.55)
+		0.55, 6.0, 0.2)

@@ -34,6 +34,8 @@ const IGNORE_WATER_SLOW := "ignore_water_slow"
 const WATER_SPEED_MULT := "water_speed_mult"
 const POUNCE_DISTANCE_MULT := "pounce_distance_mult"
 const CLIMB_SPEED_MULT := "climb_speed_mult"
+const CLIMB_OVER_LOGS := "climb_over_logs" ## ignore log collision entirely (WorldObject/Creature)
+const BREAK_ROCKS := "break_rocks" ## can bite through rocks to permanently clear them (World.gd)
 
 # StatusEffectComponent
 const POISON_IMMUNE := "poison_immune"

@@ -88,8 +88,8 @@ func _build() -> void:
 
 	_def("jaws", "Strong Jaws", "Offense", "jaws", 1,
 		"Crack bones and smash obstacles.",
-		"Bite +5, break rocks", "-8% speed",
-		[], [], {EffectKeys.BITE_DAMAGE_ADD: 5.0, EffectKeys.MASS_ADD: 0.2, EffectKeys.SPEED_MULT: 0.92, EffectKeys.RADIUS_ADD: 2.0})
+		"Bite +5, bite through rocks to clear a path", "-8% speed",
+		[], [], {EffectKeys.BITE_DAMAGE_ADD: 5.0, EffectKeys.MASS_ADD: 0.2, EffectKeys.SPEED_MULT: 0.92, EffectKeys.RADIUS_ADD: 2.0, EffectKeys.BREAK_ROCKS: true})
 
 	# ---- Claws branch (Tier 2, mutually exclusive specializations) ----
 	var claws_branch := ["rending_claws", "climbing_claws", "digging_claws", "grasping_claws"]
@@ -100,9 +100,9 @@ func _build() -> void:
 		{EffectKeys.BITE_DAMAGE_ADD: 2.0, EffectKeys.BLEED_ON_HIT: 6.0})
 	_def("climbing_claws", "Climbing Claws", "Movement", "claws", 2,
 		"Claws become climbing hooks.",
-		"Climb faster, +8% speed", "More visible",
+		"Climb over fallen logs freely, +8% speed", "More visible",
 		["claws"], _others(claws_branch, "climbing_claws"),
-		{EffectKeys.SPEED_MULT: 1.08, EffectKeys.CLIMB_SPEED_MULT: 1.5})
+		{EffectKeys.SPEED_MULT: 1.08, EffectKeys.CLIMB_SPEED_MULT: 1.5, EffectKeys.CLIMB_OVER_LOGS: true})
 	_def("digging_claws", "Digging Claws", "Movement", "claws", 2,
 		"Claws widen for burrowing through soft ground.",
 		"Can burrow to hide, dig up roots", "Slower on open ground",

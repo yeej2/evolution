@@ -36,6 +36,16 @@ extends Resource
 ## Bite damage differs by lineage too, not just the hold-to-charge special.
 @export var base_bite_damage: float = 6.0
 
+## Flat passive damage reduction from all incoming bites (Titan's "Brace" -
+## a tank should just be harder to kill all the time, not on a button).
+@export var damage_reduction_pct: float = 0.0
+
+## Q ("dodge" input action - unused otherwise) triggers a lineage-specific
+## support ability instead of a generic dodge roll, matching the "no
+## universal dodge" design rule in PLAN.md. Currently only Grazer uses this.
+@export var special_name: String = ""
+@export var special_cooldown: float = 4.0
+
 # --- Movement feel ---
 # 1.0 = instantly snaps to target velocity (the old, one-size-fits-all
 # behavior). Lower values give heavier creatures real momentum instead of

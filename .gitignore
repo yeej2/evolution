@@ -14,6 +14,12 @@ data_*/
 
 # Test/debug logs from headless dual-process testing
 *.log
+godot/host_log.txt
+godot/host_err.txt
+godot/c*_log.txt
+godot/c*_err.txt
+godot/client_log.txt
+godot/client_err.txt
 
 # OS junk
 Thumbs.db

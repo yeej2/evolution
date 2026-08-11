@@ -35,6 +35,7 @@ var pounce_hit_ids: Array = []
 var flurry_hit_timer: float = 0.0 ## style=="flurry" only - see World._check_flurry_hits()
 
 var bite_cooldown: float = 0.0
+var special_cooldown: float = 0.0 ## Q ("dodge" input) - lineage special, e.g. Grazer's Share Sustenance
 var telegraph: float = 0.0
 var attack_target: Creature = null
 var last_attacker_id: int = -1
@@ -117,6 +118,14 @@ func _update_collision_shape() -> void:
 		$Collision.shape.radius = stats.radius
 	if has_node("Visual"):
 		$Visual.queue_redraw()
+	# Base mask (creatures + trees/rocks) plus logs, unless a mutation lets
+	# this creature ignore log collision entirely (Climbing Claws) - see
+	# WorldObject.LAYER_LOG. Wildlife never owns mutations so has_flag() is
+	# always false for them, which correctly keeps logs solid by default -
+	# this has to run for every creature, not just players, since logs used
+	# to share trees/rocks' layer and the scene's static default mask no
+	# longer includes the new dedicated log layer on its own.
+	collision_mask = 5 | (0 if mutation.has_flag(EffectKeys.CLIMB_OVER_LOGS) else WorldObject.LAYER_LOG)
 
 func add_mutation(id: String) -> bool:
 	var added := mutation.add(id)
@@ -133,6 +142,8 @@ func process_server_tick(delta: float) -> void:
 	stats.hp += hp_delta
 	if bite_cooldown > 0.0:
 		bite_cooldown -= delta
+	if special_cooldown > 0.0:
+		special_cooldown -= delta
 
 	if is_player:
 		hidden_check(delta)

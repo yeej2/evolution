@@ -58,6 +58,12 @@ static func resolve_bite(attacker: Creature, target: Creature, mult: float = 1.0
 	if target.mutation.has_flag(EffectKeys.REFLECT_DAMAGE_PCT):
 		retaliation_dmg += dmg * target.mutation.mult_value(EffectKeys.REFLECT_DAMAGE_PCT, 0.0)
 
+	# Lineage-level passive damage reduction (Titan's Brace) - a player-side
+	# equivalent of the species frontal_armor above, but always-on regardless
+	# of facing, since "tank" should mean "harder to kill," full stop.
+	if target.is_player and target.lineage_data:
+		dmg *= (1.0 - target.lineage_data.damage_reduction_pct)
+
 	target.stats.hp -= dmg
 	target.last_attacker_id = attacker.entity_id
 	if retaliation_dmg > 0.0:

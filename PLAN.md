@@ -275,3 +275,24 @@ with zero errors or dropped-packet warnings; real interest management
 (culling far-away creatures per peer) is still needed before pushing past
 that toward Wild Ecosystem / Survival of the Fittest player counts.
 
+Lineages now have real roles (Stalker glass cannon, Grazer support, Titan
+tank) instead of just flat stat differences, and a first real instance of
+"the environment forces evolution choices, not just rewards them" exists:
+rocks permanently block a path unless something with Strong Jaws bites
+through, fallen logs block everyone except Climbing Claws. First-playtest
+feedback (a real remote session over playit.gg) directly drove this -
+several mutations had claimed an environmental interaction in their
+flavor text for a while without one actually existing in code.
+
+### 9.6 Next environmental step — not yet built
+
+The rock/log pattern above is deliberately small and proven before
+expanding it. The natural next instance discussed: a terrain feature
+(e.g. a ditch/chasm) that's only crossable with an aerial mutation
+("wings"), with brute-force alternatives always available for everyone
+else (route around, or spend time knocking down a tree to bridge it).
+This is bigger than rocks/logs - it implies a new terrain kind and a new
+movement mode (flight), not just a new bypass rule on an existing solid
+object - so it's scoped as its own future pass rather than bolted on
+here.
+
