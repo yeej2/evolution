@@ -69,6 +69,8 @@ func send_full_state_to_peer(peer_id: int) -> void:
 			rpc_update_object.rpc_id(peer_id, o.object_id, "open", true)
 		if o.broken:
 			rpc_update_object.rpc_id(peer_id, o.object_id, "broken", true)
+		if o.kind == "water" and current_event_id == "drought":
+			rpc_update_object_radius.rpc_id(peer_id, o.object_id, o.radius)
 	var original_food_ids: Array = []
 	for id in food_by_id.keys():
 		if id < 1000:
@@ -155,6 +157,8 @@ func _spawn_food_local(id: int, kind: String, x: float, y: float, amount: float,
 @rpc("any_peer", "call_remote", "reliable")
 func rpc_request_join(lineage_id: String) -> void:
 	if not _is_authority():
+		return
+	if LineageDB.get_lineage(lineage_id) == null:
 		return
 	var peer_id := multiplayer.get_remote_sender_id()
 	_server_spawn_player(peer_id, lineage_id)
@@ -321,6 +325,8 @@ func rpc_request_pounce(charge: float) -> void:
 		return
 	c.start_pounce(clampf(charge, 0.0, 1.0))
 
+const EAT_INTERACT_RANGE := 14.0
+
 @rpc("any_peer", "call_remote", "reliable")
 func rpc_request_eat() -> void:
 	if not _is_authority():
@@ -328,8 +334,12 @@ func rpc_request_eat() -> void:
 	var c := _creature_for_sender()
 	if c == null:
 		return
+	# _nearest_food_to's 999.0 is just a search radius for "what's the
+	# closest food anywhere nearby" - it was never a proximity check by
+	# itself, so a client could request-eat food from almost anywhere on
+	# the map. Actual reach has to be validated here, server-side.
 	var f := _nearest_food_to(c, 999.0)
-	if f:
+	if f and c.global_position.distance_to(f.global_position) <= c.stats.radius + f.radius + EAT_INTERACT_RANGE:
 		consume_food_by_creature(f, c)
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -359,8 +369,17 @@ func _try_share_sustenance(c: Creature) -> void:
 			ally = other
 	if ally == null:
 		return
-	c.hunger.hunger = minf(100.0, c.hunger.hunger + 15.0)
-	ally.hunger.hunger = maxf(0.0, ally.hunger.hunger - 20.0)
+	const COST := 15.0
+	const GIVE := 20.0
+	# hunger caps at 100, so a Grazer already near-starving (e.g. 98) would
+	# only actually pay 2 of the intended 15 cost while still handing out
+	# the full 20 - scale what the ally receives by what was actually
+	# spent, so there's no way to get the full benefit at a discount.
+	var actual_cost: float = minf(COST, 100.0 - c.hunger.hunger)
+	if actual_cost <= 0.0:
+		return
+	c.hunger.hunger += actual_cost
+	ally.hunger.hunger = maxf(0.0, ally.hunger.hunger - GIVE * (actual_cost / COST))
 	c.special_cooldown = c.lineage_data.special_cooldown
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -370,13 +389,23 @@ func rpc_choose_mutation(mutation_id: String) -> void:
 	var c := _creature_for_sender()
 	if c == null:
 		return
-	c.add_mutation(mutation_id)
+	# add_mutation()/MutationComponent.add() only reject duplicate ids - they
+	# don't know or care whether this id was ever actually offered, so
+	# without this check a client could request any mutation id at all,
+	# bypassing prerequisites/exclusions/weights entirely. Only accept an id
+	# from the specific draft the server itself most recently offered this
+	# creature, and clear it immediately either way so it can't be replayed.
+	var choices := c.pending_mutation_choices
+	c.pending_mutation_choices = []
+	if mutation_id in choices:
+		c.add_mutation(mutation_id)
 
 func _offer_mutation_draft(c: Creature) -> void:
 	var weights: Dictionary = c.lineage_data.mutation_weights if c.lineage_data else {}
 	var choices: Array = c.mutation.roll_choices(3, weights, GameState.rng)
 	if choices.is_empty():
 		return
+	c.pending_mutation_choices = choices
 	if c.owner_peer_id == multiplayer.get_unique_id() or multiplayer.multiplayer_peer == null:
 		mutation_draft_offered.emit(choices)
 	else:
@@ -403,7 +432,11 @@ func rpc_request_reproduce(inherit_mutation_id: String) -> void:
 	if not _is_authority():
 		return
 	var c := _creature_for_sender()
-	if c == null:
+	if c == null or not c.can_migrate():
+		return
+	# Without this, a client could hand back a mutation id it never
+	# actually owned and have the offspring spawn with it anyway.
+	if inherit_mutation_id != "" and not c.mutation.has(inherit_mutation_id):
 		return
 	var peer_id := multiplayer.get_remote_sender_id()
 	var prior_mass := c.stats.mass
@@ -561,6 +594,48 @@ func _broadcast_update_object(id: int, prop: String, value: bool) -> void:
 	_apply_update_object(id, prop, value)
 	if multiplayer.multiplayer_peer:
 		rpc_update_object.rpc(id, prop, value)
+
+## Radius is mutable too (Drought shrinks water), but it's a float, not a
+## bool, so it needs its own small replication path rather than reusing
+## _apply_update_object/rpc_update_object's bool-only signature. Previously
+## this was mutated directly on the server's own WorldObject with no
+## network sync at all - not just already-connected clients but even late
+## joiners never learned about it.
+func _broadcast_object_radius(id: int, radius: float) -> void:
+	_apply_object_radius(id, radius)
+	if multiplayer.multiplayer_peer:
+		rpc_update_object_radius.rpc(id, radius)
+
+func _apply_object_radius(id: int, radius: float) -> void:
+	var o: WorldObject = objects_by_id.get(id)
+	if o:
+		o.radius = radius
+		o.queue_redraw()
+
+@rpc("authority", "call_remote", "reliable")
+func rpc_update_object_radius(id: int, radius: float) -> void:
+	_apply_object_radius(id, radius)
+
+## Same story as object radius, but for food - Wildfire cooking a carcass
+## (cooked=true, amount*=1.3) was only ever applied to the server's own
+## FoodItem with no network sync, so already-connected clients kept seeing
+## the raw carcass and its old value. Late joiners did get it (food is
+## fully re-sent on join), just not anyone already in the game.
+func _broadcast_update_food_state(id: int, cooked: bool, amount: float) -> void:
+	_apply_update_food_state(id, cooked, amount)
+	if multiplayer.multiplayer_peer:
+		rpc_update_food_state.rpc(id, cooked, amount)
+
+func _apply_update_food_state(id: int, cooked: bool, amount: float) -> void:
+	var f: FoodItem = food_by_id.get(id)
+	if f:
+		f.cooked = cooked
+		f.amount = amount
+		f.queue_redraw()
+
+@rpc("authority", "call_remote", "reliable")
+func rpc_update_food_state(id: int, cooked: bool, amount: float) -> void:
+	_apply_update_food_state(id, cooked, amount)
 
 func _apply_update_object(id: int, prop: String, value: bool) -> void:
 	var o: WorldObject = objects_by_id.get(id)

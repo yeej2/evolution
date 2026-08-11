@@ -71,6 +71,7 @@ var survived_wildfire: bool = false
 # Evolution points -> mutation draft trigger
 var ep: float = 0.0
 var ep_next: float = 60.0
+var pending_mutation_choices: Array = [] ## server-authoritative: only these ids are acceptable in rpc_choose_mutation
 
 # --- Setup ---
 

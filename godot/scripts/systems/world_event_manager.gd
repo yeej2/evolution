@@ -40,17 +40,13 @@ static func _drought_start(world: World) -> void:
 	for o in world.objects_by_id.values():
 		if o.kind == "water":
 			original[o.object_id] = o.radius
-			o.radius *= 0.5
-			o.queue_redraw()
+			world._broadcast_object_radius(o.object_id, o.radius * 0.5)
 	world.event_data["drought_original_radii"] = original
 
 static func _drought_end(world: World) -> void:
 	var original: Dictionary = world.event_data.get("drought_original_radii", {})
 	for id in original.keys():
-		var o: WorldObject = world.objects_by_id.get(id)
-		if o:
-			o.radius = original[id]
-			o.queue_redraw()
+		world._broadcast_object_radius(id, original[id])
 	for c in world.creatures_by_id.values():
 		if c.is_player and c.stats.hp > 0.0:
 			c.survived_drought = true
@@ -125,9 +121,7 @@ static func _wildfire_tick(world: World, delta: float) -> void:
 		if f.kind == "carcass" and not f.cooked:
 			var c := _wildfire_coord(world, f.global_position)
 			if c < front and c > front - band:
-				f.cooked = true
-				f.amount *= 1.3
-				f.queue_redraw()
+				world._broadcast_update_food_state(f.entity_id, true, f.amount * 1.3)
 
 	var push_dir := Vector2.ZERO
 	match world.wildfire_direction:

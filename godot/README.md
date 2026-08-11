@@ -70,6 +70,38 @@ hold-to-charge-pounce/tap-to-bite, E eat/interact, Q lineage special
   replication) - as always, both host and joiners need to be on the same
   build or `rpc_snapshot` will throw an index-out-of-bounds trying to read
   fields the other side's version doesn't send.
+- **Server-side validation, from an actual code review pass.** Several
+  request_* RPCs trusted the client more than they should have for
+  anything beyond friendly co-op:
+  - `rpc_request_eat` only found the *nearest* food in a 999-unit search
+    radius with no actual proximity check - a client could eat from
+    almost anywhere. Now validated against `radius + radius +
+    EAT_INTERACT_RANGE`.
+  - `rpc_choose_mutation` only rejected duplicate ids via
+    `MutationComponent.add()` - it never checked the id was one of the
+    three actually offered. The server now tracks `pending_mutation_
+    choices` per creature and only accepts an id from that exact set,
+    clearing it immediately after (success or not).
+  - `rpc_request_reproduce` never checked `can_migrate()` or that the
+    parent actually owned the mutation it claimed to pass on. Both are
+    now validated. (Found while fixing this: reproduce was already
+    unreachable after a normal death, since the creature is despawned -
+    removed from `creatures_by_id` - before the reproduce screen even
+    appears, so it silently only ever worked after a migration win. This
+    contradicts PLAN.md's "death becomes reproduction" design and is a
+    separate, not-yet-fixed follow-up.)
+  - `rpc_request_join` never checked that `lineage_id` was real.
+  - Grazer's Share Sustenance capped its own cost at 100 hunger but still
+    gave the ally the full fixed benefit - a Grazer already near-starving
+    could pay almost nothing while still handing out the full amount. The
+    ally's benefit now scales with what was actually paid.
+- **Object radius and food cook-state are now actually replicated.** Both
+  were previously mutated only on the server's own copy with zero network
+  sync at all - not just "already-connected clients don't see it," late
+  joiners didn't either. Drought's water-shrink and Wildfire's carcass-
+  cooking now go through `_broadcast_object_radius()`/
+  `_broadcast_update_food_state()` respectively, matching the existing
+  burned/open/broken pattern.
 - **Events:** Drought, Wildfire, Predator Surge (extra hunters spawn in and
   every predator presses attacks harder/further for the duration).
 - **Migration checklist is per-biome** (`Creature.migration_checklist()`):
