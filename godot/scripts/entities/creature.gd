@@ -32,6 +32,7 @@ var pounce_time: float = 0.0
 var pounce_dir: float = 0.0
 var pounce_power: float = 0.0
 var pounce_hit_ids: Array = []
+var flurry_hit_timer: float = 0.0 ## style=="flurry" only - see World._check_flurry_hits()
 
 var bite_cooldown: float = 0.0
 var telegraph: float = 0.0
@@ -82,7 +83,7 @@ func setup_as_player(id: int, peer_id: int, lineage: String) -> void:
 	stats.base_speed = lineage_data.base_speed
 	stats.base_mass = lineage_data.mass
 	stats.base_radius = lineage_data.radius
-	stats.base_bite_damage = 6.0
+	stats.base_bite_damage = lineage_data.base_bite_damage
 	stats.base_sense_range = 0.0
 	recompute_stats()
 	stats.hp = stats.max_hp
@@ -209,6 +210,7 @@ func start_pounce(charge: float) -> void:
 	pounce_dir = aim_angle
 	pounce_power = charge
 	pounce_hit_ids.clear()
+	flurry_hit_timer = 0.0 # fire the first flurry hit immediately, not after a full interval
 
 const MIGRATION_MASS_GOAL := 2.5
 const MIGRATION_DISTANCE_GOAL := 4000.0

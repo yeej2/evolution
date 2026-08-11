@@ -138,7 +138,21 @@ func _hide_all() -> void:
 func _panel(anchor_center: bool = true) -> PanelContainer:
 	var p := PanelContainer.new()
 	add_child(p)
-	p.set_anchors_preset(Control.PRESET_CENTER if anchor_center else Control.PRESET_FULL_RECT)
+	if anchor_center:
+		# Centering has to happen AFTER this panel's children (title, button
+		# rows, etc.) are added - set_anchors_preset(CENTER) captures the
+		# panel's *current* minimum size to compute its centered offsets,
+		# and at this point (called at the top of each _build_*()) it has no
+		# children yet, so it centers a zero-size box. Every panel then grew
+		# to fit its real content while keeping those stale zero-size
+		# offsets, leaving it pinned near the top-left corner instead of
+		# actually centered - which is also why it visually collided with
+		# the HUD (also top-left) and made panels' own titles overlap their
+		# first row of buttons. Deferring one frame lets content get added
+		# first so centering is computed from the real size.
+		p.set_anchors_preset.call_deferred(Control.PRESET_CENTER)
+	else:
+		p.set_anchors_preset(Control.PRESET_FULL_RECT)
 	return p
 
 func _build_menu() -> void:
@@ -165,8 +179,8 @@ func _build_menu() -> void:
 	var join_row := HBoxContainer.new()
 	v.add_child(join_row)
 	var address_edit := LineEdit.new()
-	address_edit.placeholder_text = "127.0.0.1"
-	address_edit.custom_minimum_size = Vector2(160, 0)
+	address_edit.placeholder_text = "127.0.0.1 or host:port"
+	address_edit.custom_minimum_size = Vector2(200, 0)
 	join_row.add_child(address_edit)
 	var join_btn := Button.new()
 	join_btn.text = "Join"

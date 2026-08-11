@@ -107,11 +107,23 @@ func _on_host_pressed(biome_id: String = "forest") -> void:
 	ui.show_lineage_select()
 
 func _on_join_pressed(address: String) -> void:
-	var err := NetworkManager.join_game(address if address != "" else "127.0.0.1")
+	# Tunneling services (playit.gg, port-forwarded routers, etc.) very
+	# commonly expose a public port that differs from NetworkManager.PORT -
+	# the box needs to accept "host:port", not just a bare host that always
+	# connects on the default port regardless of what was typed.
+	var host := address if address != "" else "127.0.0.1"
+	var port := NetworkManager.PORT
+	var sep := host.rfind(":")
+	if sep != -1:
+		var maybe_port := host.substr(sep + 1)
+		if maybe_port.is_valid_int():
+			port = int(maybe_port)
+			host = host.substr(0, sep)
+	var err := NetworkManager.join_game(host, port)
 	if err != OK:
 		ui.show_message("Failed to join (error %s)." % err)
 		return
-	ui.show_message("Connecting to %s..." % address)
+	ui.show_message("Connecting to %s:%d..." % [host, port])
 	multiplayer.connected_to_server.connect(_on_connected_ok, CONNECT_ONE_SHOT)
 	multiplayer.connection_failed.connect(_on_connect_failed, CONNECT_ONE_SHOT)
 

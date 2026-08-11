@@ -371,10 +371,10 @@ func _creature_for_sender() -> Creature:
 	var id: int = peer_to_entity.get(peer_id, -1)
 	return creatures_by_id.get(id, null)
 
-func _nearest_bite_target(c: Creature) -> Creature:
+func _nearest_bite_target(c: Creature, extra_reach: float = 50.0) -> Creature:
 	var best: Creature = null
 	var best_d := INF
-	var reach := c.stats.radius + 50.0
+	var reach := c.stats.radius + extra_reach
 	for other in creatures_by_id.values():
 		if other == c or other.dead:
 			continue
@@ -387,7 +387,10 @@ func _nearest_bite_target(c: Creature) -> Creature:
 ## A pounce is a moving hitbox for its whole duration, not a single instant
 ## check - without this, charging and releasing a pounce would move the
 ## player but never actually resolve a hit against anything.
-func _check_pounce_hits(c: Creature) -> void:
+func _check_pounce_hits(c: Creature, delta: float) -> void:
+	if c.lineage_data and c.lineage_data.attack_style == "flurry":
+		_check_flurry_hits(c, delta)
+		return
 	var hit_radius_bonus: float = c.lineage_data.pounce_hit_radius_bonus if c.lineage_data else 20.0
 	for other in creatures_by_id.values():
 		if other == c or other.dead or c.pounce_hit_ids.has(other.entity_id):
@@ -396,6 +399,18 @@ func _check_pounce_hits(c: Creature) -> void:
 		if d < c.stats.radius + other.stats.radius + hit_radius_bonus:
 			c.pounce_hit_ids.append(other.entity_id)
 			CombatResolver.resolve_bite(c, other, _pounce_damage_mult(c), _pounce_knockback_mult(c))
+
+## Flurry (Stalker) doesn't move and doesn't dedupe hits by target the way a
+## single-pass lunge/charge/slam does - it's a tight, repeating attack: every
+## flurry_interval seconds while held, hit whatever's closest in range again.
+func _check_flurry_hits(c: Creature, delta: float) -> void:
+	c.flurry_hit_timer -= delta
+	if c.flurry_hit_timer > 0.0:
+		return
+	c.flurry_hit_timer = c.lineage_data.flurry_interval
+	var target := _nearest_bite_target(c, c.lineage_data.pounce_hit_radius_bonus)
+	if target:
+		CombatResolver.resolve_bite(c, target, _pounce_damage_mult(c), _pounce_knockback_mult(c))
 
 func _pounce_damage_mult(c: Creature) -> float:
 	var base: float = c.lineage_data.pounce_damage_base if c.lineage_data else 1.2
@@ -542,7 +557,7 @@ func _physics_process(delta: float) -> void:
 			c.touched_water = true # Wetlands migration checklist
 		c.process_server_tick(delta)
 		if c.is_player and c.pounce_time > 0.0 and not c.dead:
-			_check_pounce_hits(c)
+			_check_pounce_hits(c, delta)
 		if not c.is_player and not c.dead:
 			WildlifeAI.process(c, self, delta)
 	if not _is_authority():

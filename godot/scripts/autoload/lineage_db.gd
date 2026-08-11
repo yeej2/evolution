@@ -15,7 +15,7 @@ func all_ids() -> Array:
 
 func _def(id: String, name: String, radius: float, hp: float, speed: float, mass: float,
 		hunger_rate: float, color: Color, bonus: String, weights: Dictionary = {},
-		attack: Dictionary = {}, handling: float = 1.0) -> void:
+		attack: Dictionary = {}, handling: float = 1.0, bite_damage: float = 6.0) -> void:
 	var l := LineageData.new()
 	l.id = id
 	l.display_name = name
@@ -28,6 +28,7 @@ func _def(id: String, name: String, radius: float, hp: float, speed: float, mass
 	l.bonus_description = bonus
 	l.mutation_weights = weights
 	l.handling = handling
+	l.base_bite_damage = bite_damage
 	if attack.has("style"): l.attack_style = attack["style"]
 	if attack.has("name"): l.attack_name = attack["name"]
 	if attack.has("speed_base"): l.pounce_speed_base = attack["speed_base"]
@@ -37,18 +38,24 @@ func _def(id: String, name: String, radius: float, hp: float, speed: float, mass
 	if attack.has("damage_charge_mult"): l.pounce_damage_charge_mult = attack["damage_charge_mult"]
 	if attack.has("knockback_mult"): l.pounce_knockback_mult = attack["knockback_mult"]
 	if attack.has("hit_radius_bonus"): l.pounce_hit_radius_bonus = attack["hit_radius_bonus"]
+	if attack.has("flurry_interval"): l.flurry_interval = attack["flurry_interval"]
 	by_id[id] = l
 
 func _build() -> void:
-	# Stalker: nimble ambush skirmisher. Quick, long, precise lunge; snappy
-	# handling to match a creature built around repositioning constantly.
-	_def("stalker", "Stalker", 12.0, 80.0, 145.0, 0.8, 1.4, Color("8a8ab8"),
-		"First bite after hiding does +50% damage. Fast, long ambush lunge.",
+	# Stalker: fast, hard-hitting, and paper-thin - a real glass cannon, not
+	# just "the small one." Its special isn't another dash/charge variant:
+	# holding the attack plants it in place and unleashes a rapid flurry of
+	# bites (a hit every flurry_interval seconds) instead of a single
+	# committed hit - higher total damage than a clean lunge if you can
+	# actually hold position, but with no gap-closer and no escape built in,
+	# so committing to it is genuinely risky given how little HP it has.
+	_def("stalker", "Stalker", 11.0, 55.0, 160.0, 0.7, 1.4, Color("8a8ab8"),
+		"First bite after hiding does +50% damage. Very fast, hits hard, very fragile - rapid flurry attack instead of a lunge.",
 		{"claws": 1.5, "legs": 1.3, "venom": 2.0, "camouflage": 2.0, "hide": 0.6, "jaws": 0.8},
-		{"style": "lunge", "name": "Ambush Lunge", "speed_base": 400.0, "speed_charge_mult": 220.0,
-			"duration": 0.28, "damage_base": 1.3, "damage_charge_mult": 1.3,
-			"knockback_mult": 0.75, "hit_radius_bonus": 14.0},
-		1.35)
+		{"style": "flurry", "name": "Flurry Strike", "speed_base": 0.0, "speed_charge_mult": 0.0,
+			"duration": 0.65, "damage_base": 0.55, "damage_charge_mult": 0.25,
+			"knockback_mult": 0.4, "hit_radius_bonus": 8.0, "flurry_interval": 0.13},
+		1.45, 8.0)
 	# Grazer: bulk shove, not a hunter's strike. Barely more damage than a
 	# normal bite, but a long sustained charge with huge knockback - good for
 	# clearing space or shoving something into water/off a ledge, not

@@ -29,6 +29,12 @@ extends Resource
 @export var pounce_damage_charge_mult: float = 1.2
 @export var pounce_knockback_mult: float = 1.0
 @export var pounce_hit_radius_bonus: float = 20.0
+## Only meaningful when attack_style == "flurry": seconds between automatic
+## hits while the attack is held, instead of a single dash-and-hit.
+@export var flurry_interval: float = 0.15
+
+## Bite damage differs by lineage too, not just the hold-to-charge special.
+@export var base_bite_damage: float = 6.0
 
 # --- Movement feel ---
 # 1.0 = instantly snaps to target velocity (the old, one-size-fits-all
