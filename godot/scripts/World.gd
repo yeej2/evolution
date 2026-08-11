@@ -388,22 +388,30 @@ func _nearest_bite_target(c: Creature) -> Creature:
 ## check - without this, charging and releasing a pounce would move the
 ## player but never actually resolve a hit against anything.
 func _check_pounce_hits(c: Creature) -> void:
+	var hit_radius_bonus: float = c.lineage_data.pounce_hit_radius_bonus if c.lineage_data else 20.0
 	for other in creatures_by_id.values():
 		if other == c or other.dead or c.pounce_hit_ids.has(other.entity_id):
 			continue
 		var d: float = c.global_position.distance_to(other.global_position)
-		if d < c.stats.radius + other.stats.radius + 20.0:
+		if d < c.stats.radius + other.stats.radius + hit_radius_bonus:
 			c.pounce_hit_ids.append(other.entity_id)
-			var mult := 1.2 + c.pounce_power * 1.2
-			CombatResolver.resolve_bite(c, other, mult)
+			CombatResolver.resolve_bite(c, other, _pounce_damage_mult(c), _pounce_knockback_mult(c))
+
+func _pounce_damage_mult(c: Creature) -> float:
+	var base: float = c.lineage_data.pounce_damage_base if c.lineage_data else 1.2
+	var charge_mult: float = c.lineage_data.pounce_damage_charge_mult if c.lineage_data else 1.2
+	return base + c.pounce_power * charge_mult
+
+func _pounce_knockback_mult(c: Creature) -> float:
+	return c.lineage_data.pounce_knockback_mult if c.lineage_data else 1.0
 
 func server_resolve_bite(attacker: Creature, target: Creature) -> void:
 	var mult := 1.0
-	if attacker.status.hidden:
-		mult *= 1.0 # hidden bonus applied inside resolver via mutation effects
+	var knockback_mult := 1.0
 	if attacker.pounce_time > 0.0:
-		mult *= 1.2 + attacker.pounce_power * 1.2
-	CombatResolver.resolve_bite(attacker, target, mult)
+		mult = _pounce_damage_mult(attacker)
+		knockback_mult = _pounce_knockback_mult(attacker)
+	CombatResolver.resolve_bite(attacker, target, mult, knockback_mult)
 
 # ------------------------------------------------------------------
 # Food

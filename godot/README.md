@@ -23,6 +23,15 @@ Shift sprint, Space hold-to-charge-pounce/tap-to-bite, E eat/interact.
 - **Mutation families:** Claws, Legs, Hide (now including Fur, a 5th
   cold-hardy tier-2 branch alongside Insulation), Venom, Jaws, Fins
   (aquatic), plus the Carnivore/Herbivore/Scavenger diet trio.
+- **Lineages have distinct attack/movement identities, not just stats.**
+  Stalker's hold-to-charge is a fast, long, precise Ambush Lunge; Grazer's
+  is a slow, sustained Shoulder Charge that barely hits harder than a
+  normal bite but has huge knockback; Titan's Ground Slam barely travels
+  at all but roughly doubles bite damage at full charge with massive
+  knockback. Movement also has real per-lineage momentum now (`LineageData.
+  handling`) instead of instant velocity snapping - Stalker turns on a
+  dime, Titan carries weight into turns. See `LineageData`'s `pounce_*`/
+  `handling` fields and `Creature._process_player_movement()`.
 - **Events:** Drought, Wildfire, Predator Surge (extra hunters spawn in and
   every predator presses attacks harder/further for the duration).
 - **Migration checklist is per-biome** (`Creature.migration_checklist()`):

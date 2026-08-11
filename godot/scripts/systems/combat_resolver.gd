@@ -5,7 +5,7 @@ class_name CombatResolver
 ## calls; clients never run it, they only render the results the server
 ## broadcasts (hp changes, particles, status effects) via Creature RPCs.
 
-static func resolve_bite(attacker: Creature, target: Creature, mult: float = 1.0) -> Dictionary:
+static func resolve_bite(attacker: Creature, target: Creature, mult: float = 1.0, knockback_mult: float = 1.0) -> Dictionary:
 	if target.status.iframe_time > 0.0:
 		return {}
 
@@ -70,6 +70,7 @@ static func resolve_bite(attacker: Creature, target: Creature, mult: float = 1.0
 	away = away.normalized()
 	var kb: float = (dmg / maxf(target.stats.mass, 0.1)) * 0.6
 	kb *= attacker.mutation.mult_value(EffectKeys.KNOCKBACK_MULT, 1.0)
+	kb *= knockback_mult
 	target.knockback_impulse += away * kb
 
 	return {

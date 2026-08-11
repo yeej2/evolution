@@ -155,12 +155,20 @@ func hidden_check(delta: float) -> bool:
 			status.hidden = true
 	return status.hidden
 
+var _move_vel: Vector2 = Vector2.ZERO ## smoothed toward the desired velocity by lineage handling
+
 func _process_player_movement(delta: float) -> void:
 	var v := Vector2.ZERO
 	if pounce_time > 0.0:
 		pounce_time -= delta
-		var pounce_speed: float = (340.0 + pounce_power * 180.0) * mutation.mult_value(EffectKeys.POUNCE_DISTANCE_MULT, 1.0)
+		var speed_base: float = lineage_data.pounce_speed_base if lineage_data else 340.0
+		var speed_charge_mult: float = lineage_data.pounce_speed_charge_mult if lineage_data else 180.0
+		var pounce_speed: float = (speed_base + pounce_power * speed_charge_mult) * mutation.mult_value(EffectKeys.POUNCE_DISTANCE_MULT, 1.0)
 		v = Vector2.RIGHT.rotated(pounce_dir) * pounce_speed
+		# A committed lunge/charge/slam is a deliberate action, not something
+		# that should feel like it has extra momentum lag on top of its own
+		# already-tuned speed - so it bypasses the handling smoothing below.
+		_move_vel = v
 	elif not status.is_stunned():
 		var water_mult := 1.0
 		if in_water:
@@ -178,7 +186,14 @@ func _process_player_movement(delta: float) -> void:
 		v = move_input.normalized() * sp * mag if mag > 0.05 else Vector2.ZERO
 		if mag > 0.05:
 			facing = move_input.angle()
-	velocity = v + knockback_impulse
+		# Handling controls how quickly velocity catches up to input: a
+		# nimble Stalker (>1.0) turns almost instantly, a lumbering Titan
+		# (<1.0) carries real momentum and can't cut sharply.
+		var handling: float = lineage_data.handling if lineage_data else 1.0
+		_move_vel = _move_vel.lerp(v, clampf(delta * 10.0 * handling, 0.0, 1.0))
+	else:
+		_move_vel = _move_vel.lerp(Vector2.ZERO, clampf(delta * 10.0, 0.0, 1.0))
+	velocity = _move_vel + knockback_impulse
 	var before := global_position
 	move_and_slide()
 	distance_traveled += global_position.distance_to(before)
@@ -190,7 +205,7 @@ func start_bite() -> void:
 	pass # resolved directly by World.gd calling CombatResolver against a nearby target
 
 func start_pounce(charge: float) -> void:
-	pounce_time = 0.35
+	pounce_time = lineage_data.pounce_duration if lineage_data else 0.35
 	pounce_dir = aim_angle
 	pounce_power = charge
 	pounce_hit_ids.clear()
