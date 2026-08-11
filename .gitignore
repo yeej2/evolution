@@ -1,0 +1,24 @@
+# Godot-specific
+.godot/
+godot/.godot/
+*.translation
+export.cfg
+
+# Build output (produced by CI / local exports, not source)
+godot/builds/
+build/
+
+# Godot Mono
+.mono/
+data_*/
+
+# Test/debug logs from headless dual-process testing
+*.log
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# Editor
+.vscode/
+*.tmp

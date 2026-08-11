@@ -1,0 +1,1749 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+  <title>EVOLUTION — Fast Prototype</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #111;
+      color: #eee;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #wrap { position: relative; }
+    canvas { background: #1a2416; border: 2px solid #3a5a2a; cursor: crosshair; }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.85);
+      text-align: center;
+      padding: 24px;
+    }
+    .hidden { display: none; }
+    h1 { margin: 0 0 12px; color: #7fbf55; }
+    h2 { margin: 0 0 8px; color: #e0c97f; }
+    p { max-width: 560px; line-height: 1.4; }
+    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin: 12px 0; }
+    button {
+      background: #3a5a2a;
+      color: #fff;
+      border: 1px solid #7fbf55;
+      padding: 12px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover { background: #4a7a3a; }
+    .card {
+      background: #222;
+      border: 1px solid #555;
+      border-radius: 6px;
+      padding: 14px;
+      width: 220px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .card:hover { border-color: #7fbf55; background: #2a2a2a; }
+    .card h3 { margin: 0 0 6px; color: #7fbf55; }
+    .card .tag { font-size: 12px; color: #aaa; }
+    .hud {
+      position: absolute;
+      top: 10px; left: 10px;
+      background: rgba(0,0,0,0.6);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      min-width: 180px;
+    }
+    .bar { height: 10px; border-radius: 2px; margin: 2px 0 6px; overflow: hidden; background: #333; }
+    .bar > div { height: 100%; }
+    .hp { background: #c44; }
+    .en { background: #48c; }
+    .hg { background: #c94; }
+    .ep { background: #7fbf55; }
+    #log {
+      position: absolute;
+      bottom: 10px; left: 10px; right: 10px;
+      height: 54px;
+      overflow: hidden;
+      font-size: 13px;
+      color: #d0d0d0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id='wrap'>
+    <canvas id='game' width='960' height='600'></canvas>
+
+    <div id='lineageScreen' class='overlay'>
+      <h1>EVOLUTION — Prototype</h1>
+      <p>Choose a starting lineage. Survive, eat, mutate, and see if the loop feels good.</p>
+      <div class='btn-row' id='lineageButtons'></div>
+      <p style='font-size:13px;color:#aaa;margin-top:12px;'>Controls: <b>WASD</b> move · <b>Shift</b> sprint · <b>Space</b> hold/release bite/pounce · <b>Q</b> dodge · <b>E</b> eat/interact · <b>F</b> active ability · <b>Click</b> aim</p>
+      <button id='recordsBtn' style='margin-top:12px;background:#2a4a2a;'>Records</button>
+    </div>
+
+    <div id='mutationScreen' class='overlay hidden'>
+      <h2>Evolve</h2>
+      <p>Your body can change. Pick one adaptation.</p>
+      <div class='btn-row' id='mutationCards'></div>
+    </div>
+
+    <div id='migrateScreen' class='overlay hidden'>
+      <h2>The Way is Open</h2>
+      <p>Migrate to the next biome, or reproduce here and pass a trait to your next generation.</p>
+      <div class='btn-row'>
+        <button id='migrateBtn'>Migrate Onward</button>
+        <button id='reproduceBtn'>Reproduce (Gen 2)</button>
+      </div>
+      <button id='closeMigrate' style='margin-top:16px;'>Not Yet</button>
+    </div>
+
+    <div id='reproduceScreen' class='overlay hidden'>
+      <h2>Pass On a Trait</h2>
+      <p>Choose one adaptation your offspring will inherit.</p>
+      <div class='btn-row' id='reproduceCards'></div>
+    </div>
+
+    <div id='gameOverScreen' class='overlay hidden'>
+      <h2 id='endTitle'>You Died</h2>
+      <p id='endStats'></p>
+      <button id='restartBtn'>Try Again</button>
+    </div>
+
+    <div id='recordsScreen' class='overlay hidden'>
+      <h2>Field Records</h2>
+      <div id='recordsContent' style='text-align:left;max-width:500px;font-size:13px;'></div>
+      <button id='closeRecords' style='margin-top:16px;'>Close</button>
+    </div>
+
+    <div class='hud'>
+      <div>Health</div><div class='bar'><div id='hpBar' class='hp' style='width:100%'></div></div>
+      <div>Energy</div><div class='bar'><div id='enBar' class='en' style='width:100%'></div></div>
+      <div>Hunger</div><div class='bar'><div id='hgBar' class='hg' style='width:0%'></div></div>
+      <div>Evolution <span id='epText'>0 / 60</span></div><div class='bar'><div id='epBar' class='ep' style='width:0%'></div></div>
+      <div id='statLine' style='margin-top:4px;color:#bbb;font-size:12px;'>Lineage: —</div>
+      <div id='biomeLine' style='margin-top:2px;color:#7fbf55;font-size:12px;font-weight:bold;'>Biome: —</div>
+      <div id='objectiveLine' style='margin-top:2px;color:#aaa;font-size:11px;'>Reach the glowing exit</div>
+      <div id='activeLine' style='margin-top:2px;color:#ddd;font-size:11px;'>Active: —</div>
+      <div id='synergyLine' style='margin-top:2px;color:#e0c97f;font-size:11px;'>Synergies: —</div>
+      <div id='dayLine' style='margin-top:2px;color:#ddd;font-size:11px;'>Day 1</div>
+      <div id='eventLine' style='margin-top:2px;color:#ff9;font-size:11px;'></div>
+    </div>
+
+    <div id='log'></div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const W = 1600, H = 1200;
+
+    const LINEAGES = {
+      stalker: { name: 'Stalker', r: 12, hp: 80, speed: 145, color: '#8a8ab8', mass: 0.8, hungerRate: 1.4, bonus: 'First bite after hiding does +50% damage', locked: false, weights: { claws:1.5, legs:1.3, venom:2, hide:0.6, jaws:0.8, fins:0.7, gills:0.7, fur:0.6, horns:0.8, spit:1.2, roar:0.6, pulse:0.6 } },
+      grazer:  { name: 'Grazer',  r: 15, hp: 120, speed: 110, color: '#6cb06c', mass: 1.0, hungerRate: 1.1, bonus: 'Plants restore extra hunger', locked: false, weights: { claws:0.7, legs:0.8, venom:0.5, hide:1.5, jaws:0.7, fins:0.6, gills:0.6, fur:1.5, horns:0.8, spit:0.6, roar:0.6, pulse:0.6 } },
+      titan:   { name: 'Titan',   r: 22, hp: 180, speed: 82,  color: '#9e6e3e', mass: 1.8, hungerRate: 2.1, bonus: 'Larger and tougher, but needs more food', locked: false, weights: { claws:0.6, legs:0.6, venom:0.7, hide:1.5, jaws:1.5, fins:0.5, gills:0.5, fur:1.2, horns:2, spit:0.5, roar:1, pulse:0.8 } },
+      aquatic: { name: 'Aquatic', r: 13, hp: 95, speed: 115, color: '#4a8ab8', mass: 0.9, hungerRate: 1.3, bonus: 'Starts with Fins', locked: true, unlock: 'Evolve Fins or Gills in any run', unlockCondition: () => record.mutations.includes('fins') || record.mutations.includes('gills'), weights: { claws:0.8, legs:0.7, venom:0.8, hide:0.8, jaws:0.8, fins:2, gills:2, fur:0.7, horns:0.8, spit:1.2, roar:0.6, pulse:0.6 } },
+      charger: { name: 'Charger', r: 18, hp: 150, speed: 95, color: '#a06040', mass: 1.3, hungerRate: 1.6, bonus: 'Starts with Horns', locked: true, unlock: 'Evolve Horns in any run', unlockCondition: () => record.mutations.includes('horns'), weights: { claws:0.8, legs:0.8, venom:0.8, hide:1.2, jaws:1.2, fins:0.6, gills:0.6, fur:1, horns:2, spit:0.6, roar:0.8, pulse:0.8 } },
+      arctic:  { name: 'Arctic',  r: 16, hp: 130, speed: 100, color: '#d0d0d0', mass: 1.1, hungerRate: 1.3, bonus: 'Starts with Thick Fur', locked: true, unlock: 'Evolve Thick Fur in any run', unlockCondition: () => record.mutations.includes('fur'), weights: { claws:0.8, legs:0.8, venom:0.8, hide:1.2, jaws:0.8, fins:0.7, gills:0.7, fur:2, horns:1, spit:0.6, roar:0.6, pulse:0.6 } }
+    };
+
+    const MUTATIONS = {
+      claws: { id: 'claws', name: 'Sharp Claws', category: 'Offense', effect: 'Bite +3, climb trees', tradeoff: 'Slightly smaller', desc: 'Scratch bark, raid nests, climb over trees.' },
+      legs: { id: 'legs', name: 'Long Legs', category: 'Movement', effect: 'Speed +25%, water faster', tradeoff: '-5 max HP', desc: 'Sprint further and cross shallows with ease.' },
+      hide: { id: 'hide', name: 'Thick Hide', category: 'Defense', effect: '+30 HP, +mass', tradeoff: '-12% speed, bigger', desc: 'Take hits and intimidate smaller creatures.' },
+      venom: { id: 'venom', name: 'Venom Fangs', category: 'Offense', effect: 'Bite poisons target', tradeoff: '+2 bite energy cost', desc: 'Wear prey down over time.' },
+      jaws: { id: 'jaws', name: 'Strong Jaws', category: 'Offense', effect: 'Bite +5, break rocks', tradeoff: '-8% speed', desc: 'Crack bones and smash obstacles.' },
+      fins: { id: 'fins', name: 'Fins', category: 'Movement', effect: 'Water is fast, land slightly slower', tradeoff: 'Slower on land', desc: 'Rivers become highways.' },
+      gills: { id: 'gills', name: 'Gills', category: 'Metabolism', effect: 'Double Energy regen in water', tradeoff: 'Hungrier on land', desc: 'Breathe and hunt underwater.' },
+      fur: { id: 'fur', name: 'Thick Fur', category: 'Defense', effect: '+20 HP, cold resist', tradeoff: '-5% speed', desc: 'Survive icy highlands.' },
+      horns: { id: 'horns', name: 'Horns', category: 'Offense', effect: 'Pounce +30%, bite +5', tradeoff: 'Slower turning', desc: 'Ram and gore opponents.' },
+      spit: { id: 'spit', name: 'Venom Spit', category: 'Active', effect: 'Press F: ranged poison shot', tradeoff: 'Costs 15 Energy', desc: 'Spit venom at distant prey.', active: 'spit' },
+      roar: { id: 'roar', name: 'Intimidating Roar', category: 'Active', effect: 'Press F: fear nearby creatures', tradeoff: 'Costs 20 Energy', desc: 'Make nearby enemies flee.', active: 'roar' },
+      pulse: { id: 'pulse', name: 'Electric Pulse', category: 'Active', effect: 'Press F: stun nearby attackers', tradeoff: 'Costs 25 Energy', desc: 'Discharge and stun attackers.', active: 'pulse' },
+      arboreal_limbs: { id: 'arboreal_limbs', name: 'Arboreal Limbs', category: 'Movement', effect: 'Speed +8%, better climbing', tradeoff: 'More visible silhouette', desc: 'Claws evolve into climbing limbs.', requires: ['claws'] },
+      bone_plate: { id: 'bone_plate', name: 'Bone Plate', category: 'Defense', effect: '+20 HP, +mass', tradeoff: 'Slightly slower', desc: 'Hide hardens into bony plates.', requires: ['hide'] },
+      toxic_spit: { id: 'toxic_spit', name: 'Toxic Spit', category: 'Offense', effect: 'Venom lasts 8s', tradeoff: '+1 bite cost', desc: 'Venom glands become weaponized.', requires: ['venom'] },
+      rending_claws: { id: 'rending_claws', name: 'Rending Claws', category: 'Offense', effect: 'Bite +2, 6s bleed', tradeoff: 'Slower attack', desc: 'Claws tear deep wounds.', requires: ['claws'] },
+      climbing_claws: { id: 'climbing_claws', name: 'Climbing Claws', category: 'Movement', effect: 'Climb faster, +8% speed', tradeoff: 'More visible', desc: 'Claws become climbing hooks.', requires: ['claws'] },
+      camouflage: { id: 'camouflage', name: 'Camouflage', category: 'Stealth', effect: 'Hide in 0.6s, harder to spot while still', tradeoff: 'No bonus while moving', desc: 'Hide hardens into mottled, blending skin.', requires: ['hide'] },
+      thorns: { id: 'thorns', name: 'Thorns', category: 'Defense', effect: 'Attackers take 20% reflect damage', tradeoff: 'None', desc: 'Hide sprouts sharp spines.', requires: ['hide'] },
+      insulation: { id: 'insulation', name: 'Insulation', category: 'Survival', effect: 'Immune to poison, +10 HP', tradeoff: 'None', desc: 'Hide grows a fatty, resistant layer.', requires: ['hide'] },
+      numbing_venom: { id: 'numbing_venom', name: 'Numbing Venom', category: 'Control', effect: 'Poison also slows target 30%', tradeoff: 'None', desc: 'Venom dulls muscle and nerve.', requires: ['venom'] },
+      parasitic_venom: { id: 'parasitic_venom', name: 'Parasitic Venom', category: 'Survival', effect: 'Poison damage heals you', tradeoff: 'None', desc: 'Venom feeds back into your own body.', requires: ['venom'] },
+      strider: { id: 'strider', name: 'Strider', category: 'Movement', effect: '+15% land speed', tradeoff: 'None', desc: 'Legs lengthen for open ground.', requires: ['legs'] },
+      long_jumper: { id: 'long_jumper', name: 'Long Jumper', category: 'Movement', effect: 'Pounce distance +50%', tradeoff: 'None', desc: 'Legs coil for huge leaps.', requires: ['legs'] },
+      mud_legs: { id: 'mud_legs', name: 'Mud Legs', category: 'Movement', effect: 'Ignore water slowdown', tradeoff: 'None', desc: 'Wide legs never sink in mud or shallows.', requires: ['legs'] },
+      bone_crusher_j: { id: 'bone_crusher_j', name: 'Crushing Jaws', category: 'Offense', effect: 'Bite knockback +40%', tradeoff: 'None', desc: 'Jaws strong enough to shatter bone.', requires: ['jaws'] },
+      stunning_bite: { id: 'stunning_bite', name: 'Stunning Bite', category: 'Control', effect: 'Bite briefly stuns target', tradeoff: 'None', desc: 'A crushing grip that rattles prey.', requires: ['jaws'] },
+      ruminant_gut: { id: 'ruminant_gut', name: 'Ruminant Gut', category: 'Diet', effect: 'Berries restore +80% more', tradeoff: 'Meat restores less', desc: 'Jaws adapt to grind tough plant fiber.', requires: ['jaws'] },
+      sleek_fins: { id: 'sleek_fins', name: 'Sleek Fins', category: 'Movement', effect: 'Water speed much higher', tradeoff: 'None', desc: 'Fins streamline for open water.', requires: ['fins'] },
+      dorsal_spines: { id: 'dorsal_spines', name: 'Dorsal Spines', category: 'Defense', effect: 'Attackers in water get poisoned', tradeoff: 'None', desc: 'Fins sprout venomous spines.', requires: ['fins'] },
+      whiskers: { id: 'whiskers', name: 'Whiskers', category: 'Senses', effect: 'Sense danger in water from afar', tradeoff: 'None', desc: 'Sensitive barbels read the water.', requires: ['fins'] },
+      great_horns: { id: 'great_horns', name: 'Great Horns', category: 'Offense', effect: 'Pounce hits stun, +mass', tradeoff: '-5% speed', desc: 'Horns grow massive and heavy.', requires: ['horns'] },
+      blunt_horns: { id: 'blunt_horns', name: 'Blunt Horns', category: 'Defense', effect: '+15 HP, stuns head-on attackers', tradeoff: 'None', desc: 'Horns thicken into a battering ram.', requires: ['horns'] },
+      hooked_horns: { id: 'hooked_horns', name: 'Hooked Horns', category: 'Control', effect: 'Pounce immobilizes small prey', tradeoff: 'None', desc: 'Horns curve into hooks for snagging prey.', requires: ['horns'] },
+      diet_carnivore: { id: 'diet_carnivore', name: 'Carnivore Gut', category: 'Diet', effect: 'Meat restores +60% hunger', tradeoff: 'Plants restore -40%', desc: 'Your gut specializes in flesh. You depend on prey populations.', excludes: ['diet_herbivore','diet_scavenger'] },
+      diet_herbivore: { id: 'diet_herbivore', name: 'Herbivore Gut', category: 'Diet', effect: 'Plants restore +60% hunger', tradeoff: 'Meat makes you sick (poison)', desc: 'Your gut specializes in plant matter. Droughts and fires hurt you badly.', excludes: ['diet_carnivore','diet_scavenger'] },
+      diet_scavenger: { id: 'diet_scavenger', name: 'Scavenger Gut', category: 'Diet', effect: 'Carcasses +40% restore, never spoil', tradeoff: 'Fresh kills restore -30%', desc: 'Your gut thrives on decay. You do well when things are dying.', excludes: ['diet_carnivore','diet_herbivore'] }
+    };
+    const BIOMES = [
+      { name: 'Forest', bg: '#1a2416', border: '#3a5a2a', tree: '#4a3a22', leaf: '#5a9a3a', rock: '#555', water: '#3a5a8a', berry: '#4abf4a', carcass: '#8b5a2b', exit: '#fff', preyColor: '#d9c84a', predatorColor: '#c05050', apexColor: '#6a3a8a', mutations: ['claws','legs','hide','venom','jaws','arboreal_limbs','bone_plate','toxic_spit','rending_claws','climbing_claws','camouflage','thorns','insulation','numbing_venom','parasitic_venom','strider','long_jumper','mud_legs','bone_crusher_j','stunning_bite','ruminant_gut','diet_carnivore','diet_herbivore','diet_scavenger'], unlocked: [], spawn: {prey:8, predator:3, apex:1, trees:5, rocks:3, waters:2, berries:10, logs:2, nests:2}, statMult: {hp:1, speed:1, dmg:1} },
+      { name: 'Wetlands', bg: '#16241e', border: '#3a6a5a', tree: '#2a3a22', leaf: '#4a9a5a', rock: '#4a5a5a', water: '#3a7a9a', berry: '#5abf7a', carcass: '#6b5a3b', exit: '#aaffff', preyColor: '#c9d84a', predatorColor: '#40a0a0', apexColor: '#3a5a9a', mutations: ['claws','legs','hide','venom','jaws','fins','gills','spit','arboreal_limbs','bone_plate','toxic_spit','rending_claws','climbing_claws','camouflage','thorns','insulation','numbing_venom','parasitic_venom','strider','long_jumper','mud_legs','bone_crusher_j','stunning_bite','ruminant_gut','sleek_fins','dorsal_spines','whiskers','diet_carnivore','diet_herbivore','diet_scavenger'], unlocked: ['fins','gills','spit'], spawn: {prey:7, predator:4, apex:1, trees:3, rocks:2, waters:4, berries:8, logs:2, nests:1}, statMult: {hp:1.2, speed:1.1, dmg:1.1} },
+      { name: 'Highlands', bg: '#1f1a1a', border: '#6a5a3a', tree: '#3a2a1a', leaf: '#6a9a3a', rock: '#7a7a7a', water: '#4a5a7a', berry: '#8abf4a', carcass: '#7a5a4b', exit: '#ffd700', preyColor: '#d9b85a', predatorColor: '#a06060', apexColor: '#5a3a6a', mutations: ['claws','legs','hide','venom','jaws','fins','gills','fur','horns','roar','pulse','arboreal_limbs','bone_plate','toxic_spit','rending_claws','climbing_claws','camouflage','thorns','insulation','numbing_venom','parasitic_venom','strider','long_jumper','mud_legs','bone_crusher_j','stunning_bite','ruminant_gut','sleek_fins','dorsal_spines','whiskers','great_horns','blunt_horns','hooked_horns','diet_carnivore','diet_herbivore','diet_scavenger'], unlocked: ['fur','horns','roar','pulse'], spawn: {prey:6, predator:4, apex:2, trees:4, rocks:5, waters:1, berries:6, logs:3, nests:1}, statMult: {hp:1.4, speed:1.05, dmg:1.3} }
+    ];
+
+    const SPECIES = {
+      niblet:   { name: 'Niblet', type: 'prey', r: 8, hp: 18, speed: 115, mass: 0.25, color: '#9ec85a', sense: 160, herd: true, biteDamage: 0 },
+      mossback: { name: 'Mossback', type: 'prey', r: 15, hp: 50, speed: 70, mass: 0.9, color: '#5a8a4a', sense: 120, biteDamage: 0 },
+      shellback:{ name: 'Shellback', type: 'prey', r: 17, hp: 70, speed: 65, mass: 1.3, color: '#7a9a6a', sense: 100, armor: 0.7, biteDamage: 0 },
+      razorcat: { name: 'Razorcat', type: 'predator', r: 13, hp: 55, speed: 115, mass: 0.85, color: '#a05050', sense: 240, nocturnal: true, biteDamage: 10 },
+      riverjaw: { name: 'Riverjaw', type: 'predator', r: 15, hp: 70, speed: 90, mass: 1.0, color: '#4a7a9a', sense: 220, aquatic: true, waterTether: true, biteDamage: 12 },
+      carrion:  { name: 'Carrion Beetle', type: 'predator', r: 12, hp: 40, speed: 85, mass: 0.6, color: '#6a5a4a', sense: 260, scavenger: true, biteDamage: 5 },
+      greathorn:{ name: 'Great Horn', type: 'apex', r: 32, hp: 240, speed: 55, mass: 4.0, color: '#6a3a8a', sense: 260, territorial: true, biteDamage: 22, armor: 0.6, frontalRetaliation: true, rearBonus: 0.4 }
+    };
+
+    const EVENTS = {
+      drought: {
+        name: 'Drought', duration: 30, color: 'rgba(160,120,40,0.3)',
+        start: () => {
+          for (const o of objects) if (o.kind === 'water') o.r *= 0.5;
+          log('Drought! Water sources shrink. Berries stop regrowing.');
+        },
+        end: () => { for (const o of objects) if (o.kind === 'water') o.r /= 0.5; if (player.hp > 0) { player.survivedDrought = true; log('You endured the drought.'); } },
+        tick: (dt) => {
+          const waters = objects.filter(o => o.kind === 'water');
+          if (!waters.length) return;
+          for (const c of creatures) {
+            if (c.type === 'prey') {
+              let nearest = waters[0], bd = dist(c, nearest);
+              for (const w of waters) { const d = dist(c, w); if (d < bd) { bd = d; nearest = w; } }
+              if (bd > nearest.r + c.r + 8) {
+                const a = Math.atan2(nearest.y - c.y, nearest.x - c.x);
+                c.x += Math.cos(a) * c.speed * 0.5 * dt;
+                c.y += Math.sin(a) * c.speed * 0.5 * dt;
+              }
+            }
+            if (c.aquatic && !inWater(c)) { c.hp -= 3 * dt; }
+          }
+        }
+      },
+      bloom: {
+        name: 'Bloom', duration: 22, color: 'rgba(40,160,60,0.25)',
+        start: () => { log('Bloom! Plants erupt across the biome — some look suspicious.'); },
+        end: () => {},
+        tick: (dt) => {
+          if (Math.random() < 0.18 * dt) {
+            const poison = Math.random() < 0.25;
+            const f = makeFood('berry', rand(40,W-40), rand(40,H-40));
+            if (poison) { f.poisonous = true; f.color = '#8a4ab0'; }
+            foods.push(f);
+          }
+        }
+      },
+      predator_surge: {
+        name: 'Predator Surge', duration: 20, color: 'rgba(160,40,40,0.25)',
+        start: () => { for (let i=0;i<3;i++) creatures.push(makeCreature('predator', rand(60,W-60), rand(60,H-60))); log('Predator surge! New hunters arrive.'); },
+        end: () => {},
+        tick: (dt) => {}
+      },
+      wildfire: {
+        name: 'Wildfire', duration: 32, bandWidth: 160,
+        color: 'rgba(210,90,20,0.28)', warmup: 6,
+        start: () => {
+          const dirs = ['left','right','top','bottom'];
+          event.direction = dirs[Math.floor(Math.random()*dirs.length)];
+          event.progress = 0;
+          event.burned = new WeakSet();
+          log(`WILDFIRE! Flames sweep in from the ${event.direction}. Reach water, outrun it, or ride it out with insulation.`);
+        },
+        end: () => { if (player.hp > 0) { player.survivedWildfire = true; log('The wildfire burns out. You survived it.'); } },
+        tick: (dt) => {
+          const E = EVENTS.wildfire;
+          const total = (event.direction === 'left' || event.direction === 'right') ? W : H;
+          event.progress = Math.min(total + E.bandWidth, event.progress + (total / E.duration) * dt);
+          const front = event.progress, band = E.bandWidth;
+          const coordOf = (e) => {
+            if (event.direction === 'left') return e.x;
+            if (event.direction === 'right') return W - e.x;
+            if (event.direction === 'top') return e.y;
+            return H - e.y;
+          };
+          const inBand = (e) => { const c = coordOf(e); return c < front && c > front - band; };
+          const isPastFront = (e) => coordOf(e) < front - band;
+          for (let i = objects.length - 1; i >= 0; i--) {
+            const o = objects[i];
+            if (event.burned.has(o)) continue;
+            if (isPastFront(o) || inBand(o)) {
+              event.burned.add(o);
+              if (o.kind === 'nest') objects.splice(i,1);
+              else if (o.kind === 'tree') objects.splice(i,1);
+              else if (o.kind === 'log') { o.open = true; o.solid = false; }
+            }
+          }
+          for (const f of foods) {
+            if (f.kind === 'carcass' && !f.cooked && inBand(f)) { f.cooked = true; f.amount = Math.round(f.amount * 1.3); }
+          }
+          let dx = 0, dy = 0;
+          if (event.direction === 'left') dx = 1;
+          if (event.direction === 'right') dx = -1;
+          if (event.direction === 'top') dy = 1;
+          if (event.direction === 'bottom') dy = -1;
+          const scorch = (entity, isPlayer) => {
+            if (isPlayer && player.insulation) return;
+            if (inWater(entity)) return;
+            if (!inBand(entity)) return;
+            const fast = entity.speed > 140;
+            entity.hp -= (fast ? 6 : 20) * dt;
+            entity.x += dx * 90 * dt;
+            entity.y += dy * 90 * dt;
+          };
+          scorch(player, true);
+          for (const c of creatures) scorch(c, false);
+        }
+      }
+    };
+
+    const SYNERGIES = {
+      toxic_claws: { name: 'Toxic Claws', requires: ['claws','venom'], desc: 'Claw bites also poison', apply: () => { player.toxicClaws = true; } },
+      aquatic_predator: { name: 'Aquatic Predator', requires: ['fins','gills'], desc: 'Bites in water deal +30% damage', apply: () => { player.aquaticPredator = true; } },
+      living_tank: { name: 'Living Tank', requires: ['horns','hide'], desc: 'Pounces stun for 0.4s', apply: () => { player.livingTank = true; } },
+      bone_crusher: { name: 'Bone Crusher', requires: ['jaws','horns'], desc: 'Bite and pounce knockback +50%', apply: () => { player.boneCrusher = true; } },
+      fortress: { name: 'Fortress', requires: ['fur','hide'], desc: '+15 max HP', apply: () => { player.maxHp += 15; player.hp += 15; } },
+      swift_hunter: { name: 'Swift Hunter', requires: ['legs','fins'], desc: 'Pounce distance +30%', apply: () => { player.swiftHunter = true; } }
+    };
+
+    function checkSynergies() {
+      for (const key in SYNERGIES) {
+        const s = SYNERGIES[key];
+        if (!player.synergies.has(key) && s.requires.every(id => player.mutations.has(id))) {
+          player.synergies.add(key);
+          s.apply();
+          log(`Synergy: ${s.name}! ${s.desc}`);
+        }
+      }
+    }
+
+    const KEY = {};
+    const mouse = { x: 0, y: 0 };
+    const logs = [];
+
+    let player, creatures, foods, objects, particles, state, lastTime, lineageKey;
+    let pendingSeeds = [];
+    let genFactor = 1;
+    let worldTime = 0;
+    let dayTime = 0;
+    let night = false;
+    let event = null;
+    let eventTimer = 0;
+    let pendingEvent = null;
+    let pendingTimer = 0;
+    let biomeIndex = 0;
+    let unlockedIds = new Set(BIOMES[0].mutations);
+
+    const RECORD_KEY = 'evo_prototype_record';
+    let record = loadRecord();
+    function loadRecord() {
+      try {
+        const raw = localStorage.getItem(RECORD_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (e) {}
+      return { mutations: [], biomes: [], creatures: [], lineages: [], bestTime: 0, bestBiomes: 0, legacy: null };
+    }
+    function saveRecord() {
+      try { localStorage.setItem(RECORD_KEY, JSON.stringify(record)); } catch (e) {}
+    }
+    function markDiscovered(type, id) {
+      const arr = record[type];
+      if (arr && !arr.includes(id)) { arr.push(id); saveRecord(); }
+    }
+    function isLineageUnlocked(key) {
+      if (!LINEAGES[key].locked) return true;
+      return record.lineages.includes(key);
+    }
+    function checkLineageUnlocks() {
+      for (const key in LINEAGES) {
+        const L = LINEAGES[key];
+        if (L.locked && L.unlockCondition && L.unlockCondition() && !record.lineages.includes(key)) {
+          record.lineages.push(key); saveRecord(); log(`Unlocked lineage: ${L.name}`);
+        }
+      }
+    }
+
+    function log(msg) {
+      logs.unshift(msg);
+      if (logs.length > 3) logs.pop();
+      document.getElementById('log').innerHTML = logs.map(s => `• ${s}`).join('<br>');
+    }
+
+    window.addEventListener('keydown', e => { KEY[e.code] = true; });
+    window.addEventListener('keyup', e => { KEY[e.code] = false; });
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+    });
+
+    function rand(a,b) { return Math.random()*(b-a)+a; }
+    function clamp(v,a,b) { return Math.max(a,Math.min(b,v)); }
+    function dist(a,b) { return Math.hypot(a.x-b.x, a.y-b.y); }
+    function normalize(x,y) { const d=Math.hypot(x,y); return d>0.001?{x:x/d,y:y/d}:{x:0,y:0}; }
+
+    function makePlayer(key) {
+      const L = LINEAGES[key];
+      const p = {
+        x: W/2, y: H/2, r: L.r, color: L.color,
+        maxHp: L.hp, hp: L.hp, maxEn: 100, en: 100, hunger: 0, maxHunger: 100,
+        speed: L.speed, baseSpeed: L.speed, mass: L.mass, baseMass: L.mass,
+        biteDamage: 10, biteCost: 5, biteCooldown: 0,
+        charge: 0, charging: false, chargeAim: 0,
+        pounceTime: 0, pounceDir: 0, pouncePower: 0, pounceHits: new Set(),
+        spaceHeld: false,
+        dodgeTime: 0, dodgeDir: {x:0, y:0}, dodgeCooldown: 0, iframe: 0, qHeld: false,
+        active: null, activeName: '', activeCooldown: 0, fHeld: false,
+        apexKilled: false, migrateDismissed: false, generation: 1,
+        survivedDrought: false, survivedWildfire: false, touchedWater: false, distanceTraveled: 0,
+        ep: 0, epNext: 60, lineage: key,
+        mutations: new Set(),
+        synergies: new Set(),
+        hidden: 0, hiddenTimer: 0,
+        bleed: 0, poison: 0,
+        venom: false, claws: false, jaws: false,
+        arboreal: false, bonePlate: false, toxicSpit: false, venomDuration: 5,
+        rendingClaws: false, climbingClaws: false, bleedDuration: 3, treeBoost: 1,
+        camouflage: false, thorns: false, insulation: false,
+        numbingVenom: false, parasiticVenom: false,
+        strider: false, longJumper: false, mudLegs: false,
+        boneCrusherJ: false, stunningBite: false, ruminantGut: false,
+        sleekFins: false, dorsalSpines: false, whiskers: false, whiskerTimer: 0,
+        greatHorns: false, bluntHorns: false, hookedHorns: false,
+        dietCarnivore: false, dietHerbivore: false, dietScavenger: false
+      };
+      if (key === 'aquatic') { p.mutations.add('fins'); p.fins = true; p.speed *= 0.95; }
+      if (key === 'charger') { p.mutations.add('horns'); p.horns = true; p.biteDamage += 5; p.r += 2; }
+      if (key === 'arctic') { p.mutations.add('fur'); p.fur = true; p.maxHp += 20; p.hp += 20; p.mass += 0.2; p.speed *= 0.95; p.r += 2; }
+      return p;
+    }
+
+    function makeCreature(type, x, y, b = BIOMES[biomeIndex]) {
+      const s = b.statMult;
+      const keys = Object.keys(SPECIES).filter(k => SPECIES[k].type === type);
+      const key = keys[Math.floor(Math.random() * keys.length)];
+      const S = SPECIES[key];
+      const hp = S.hp * s.hp * genFactor;
+      const speed = S.speed * s.speed;
+      const bite = type === 'prey' ? 0 : S.biteDamage * s.dmg * genFactor;
+      const c = {
+        type, species: key, name: S.name, x, y, r: S.r, hp, maxHp: hp, speed, mass: S.mass, color: S.color, ai: 'wander', timer: rand(0,2), fear: 0, stun: 0, biteDamage: bite, telegraph: 0, lastAttacker: null, sense: S.sense, facing: 0
+      };
+      if (S.armor) c.armor = S.armor;
+      if (S.frontalRetaliation) c.frontalRetaliation = true;
+      if (S.rearBonus) c.rearBonus = S.rearBonus;
+      if (S.nocturnal) c.nocturnal = true;
+      if (S.aquatic) c.aquatic = true;
+      if (S.scavenger) c.scavenger = true;
+      if (S.territorial) c.territory = {x, y};
+      if (S.herd) c.herd = true;
+      if (S.waterTether) c.waterTether = true;
+      return c;
+    }
+
+    function makeFood(kind, x, y, b = BIOMES[biomeIndex]) {
+      return { kind, x, y, r: kind === 'berry' ? 6 : 10, hp: 25, amount: kind === 'berry' ? 22 : 45, color: kind === 'berry' ? b.berry : b.carcass };
+    }
+
+    function makeObject(kind, x, y, b = BIOMES[biomeIndex]) {
+      if (kind === 'tree') return { kind, x, y, r: 22, color: b.tree, leaf: b.leaf, solid: true };
+      if (kind === 'rock') return { kind, x, y, r: 28, color: b.rock, solid: true };
+      if (kind === 'water') return { kind, x, y, r: 70, color: b.water, solid: false };
+      if (kind === 'exit') return { kind, x, y, r: 35, color: b.exit, solid: false };
+      if (kind === 'log') return { kind, x, y, r: 32, color: '#6b5a3b', solid: true, open: false, gate: 'claws' };
+      if (kind === 'nest') return { kind, x, y, r: 22, color: '#8b6a4b', solid: false, open: false, gate: 'claws' };
+    }
+
+    function updateEvent(dt) {
+      if (event) {
+        eventTimer -= dt;
+        event.tick(dt);
+        if (eventTimer <= 0) { event.end(); event = null; }
+      } else if (pendingEvent) {
+        pendingTimer -= dt;
+        if (pendingTimer <= 0) {
+          event = pendingEvent;
+          pendingEvent = null;
+          eventTimer = event.duration;
+          event.start();
+        }
+      } else if (Math.random() < 0.003 * dt) {
+        const keys = Object.keys(EVENTS);
+        const k = keys[Math.floor(Math.random() * keys.length)];
+        const candidate = EVENTS[k];
+        if (candidate.warmup) {
+          pendingEvent = candidate;
+          pendingTimer = candidate.warmup;
+          log(`You smell smoke on the wind...`);
+        } else {
+          event = candidate;
+          eventTimer = event.duration;
+          event.start();
+        }
+      }
+    }
+
+    function spawnWorld() {
+      event = null;
+      eventTimer = 0;
+      pendingEvent = null;
+      pendingTimer = 0;
+      const b = BIOMES[biomeIndex];
+      const s = b.spawn;
+      creatures = [];
+      foods = [];
+      objects = [];
+      particles = [];
+      pendingSeeds = [];
+      for (let i=0;i<s.berries;i++) foods.push(makeFood('berry', rand(50,W-50), rand(50,H-50), b));
+      for (let i=0;i<s.prey;i++) creatures.push(makeCreature('prey', rand(60,W-60), rand(60,H-60), b));
+      for (let i=0;i<s.predator;i++) creatures.push(makeCreature('predator', rand(60,W-60), rand(60,H-60), b));
+      for (let i=0;i<s.apex;i++) creatures.push(makeCreature('apex', rand(200,W-200), rand(200,H-200), b));
+      for (let i=0;i<s.trees;i++) objects.push(makeObject('tree', rand(100,W-100), rand(100,H-100), b));
+      for (let i=0;i<s.rocks;i++) objects.push(makeObject('rock', rand(100,W-100), rand(100,H-100), b));
+      for (let i=0;i<s.waters;i++) objects.push(makeObject('water', rand(300,W-300), rand(300,H-300), b));
+      for (let i=0;i<s.logs;i++) objects.push(makeObject('log', rand(200,W-200), rand(200,H-200), b));
+      for (let i=0;i<s.nests;i++) objects.push(makeObject('nest', rand(100,W-100), rand(100,H-100), b));
+      // one guaranteed gate on the path to the exit
+      objects.push(makeObject('log', W - 320, H - 320, b));
+      objects.push(makeObject('exit', W - 120, H - 120, b));
+    }
+
+    function updateBiomeHUD() {
+      document.getElementById('biomeLine').textContent = `Biome: ${BIOMES[biomeIndex].name}`;
+      if (biomeIndex + 1 >= BIOMES.length) {
+        document.getElementById('objectiveLine').textContent = 'Final biome — survive and escape!';
+      } else if (canMigrate()) {
+        document.getElementById('objectiveLine').textContent = 'Migration open! Reach the glowing exit.';
+      } else {
+        const items = migrationChecklist().map(c => `${c.label} ${c.done ? '✓' : '×'}`).join(' · ');
+        document.getElementById('objectiveLine').textContent = `Migrate via any one: ${items}`;
+      }
+    }
+
+    function nextBiome() {
+      if (biomeIndex + 1 >= BIOMES.length) {
+        endGame(true);
+        return;
+      }
+      biomeIndex++;
+      const b = BIOMES[biomeIndex];
+      for (const id of b.unlocked) unlockedIds.add(id);
+      spawnWorld();
+      player.x = W/2; player.y = H/2;
+      player.pounceTime = 0; player.dodgeTime = 0; player.iframe = 0; player.charging = false; player.charge = 0;
+      player.apexKilled = false;
+      player.survivedDrought = false;
+      player.survivedWildfire = false;
+      player.touchedWater = false;
+      player.distanceTraveled = 0;
+      dayTime = 0;
+      player.hunger = Math.max(0, player.hunger - 50);
+      player.en = player.maxEn;
+      player.hp = Math.min(player.maxHp, player.hp + 40);
+      log(`Entered the ${b.name}. New mutations available!`);
+      updateBiomeHUD();
+    }
+
+    function startGame(key) {
+      lineageKey = key;
+      biomeIndex = 0;
+      genFactor = 1;
+      unlockedIds = new Set(BIOMES[0].mutations);
+      player = makePlayer(key);
+      if (record.legacy) applyLegacy(record.legacy);
+      spawnWorld();
+      state = 'playing';
+      worldTime = 0;
+      dayTime = 0;
+      lastTime = performance.now();
+      document.getElementById('lineageScreen').classList.add('hidden');
+      document.getElementById('gameOverScreen').classList.add('hidden');
+      document.getElementById('statLine').textContent = `Lineage: ${player.lineage} · Biome: ${BIOMES[biomeIndex].name} · Mass: ${player.mass.toFixed(1)} · Speed: ${Math.round(player.speed)}`;
+      updateBiomeHUD();
+      log('The forest is alive. Find food before you starve.');
+      log('Reach the glowing exit to find the next biome.');
+      requestAnimationFrame(loop);
+    }
+
+    function buildLineageScreen() {
+      const row = document.getElementById('lineageButtons');
+      row.innerHTML = '';
+      for (const k in LINEAGES) {
+        const L = LINEAGES[k];
+        const unlocked = isLineageUnlocked(k);
+        const b = document.createElement('button');
+        if (unlocked) {
+          b.innerHTML = `<b>${L.name}</b><br><span style='font-size:12px;color:#ccc'>${L.bonus}</span>`;
+          b.onclick = () => startGame(k);
+        } else {
+          b.innerHTML = `<b>???</b><br><span style='font-size:12px;color:#888'>${L.unlock}</span>`;
+          b.style.opacity = '0.6';
+          b.style.cursor = 'default';
+        }
+        row.appendChild(b);
+      }
+      document.getElementById('restartBtn').onclick = () => {
+        document.getElementById('gameOverScreen').classList.add('hidden');
+        document.getElementById('lineageScreen').classList.remove('hidden');
+      };
+      document.getElementById('recordsBtn').onclick = () => {
+        document.getElementById('recordsScreen').classList.remove('hidden');
+        buildRecordsScreen();
+      };
+      document.getElementById('closeRecords').onclick = () => {
+        document.getElementById('recordsScreen').classList.add('hidden');
+      };
+      document.getElementById('migrateBtn').onclick = () => {
+        document.getElementById('migrateScreen').classList.add('hidden');
+        state = 'playing';
+        lastTime = performance.now();
+        requestAnimationFrame(loop);
+        nextBiome();
+      };
+      document.getElementById('reproduceBtn').onclick = () => {
+        document.getElementById('migrateScreen').classList.add('hidden');
+        openReproduceChoice();
+      };
+      document.getElementById('closeMigrate').onclick = () => {
+        document.getElementById('migrateScreen').classList.add('hidden');
+        state = 'playing';
+        lastTime = performance.now();
+        requestAnimationFrame(loop);
+      };
+      checkLineageUnlocks();
+    }
+
+    function buildRecordsScreen() {
+      const r = record;
+      const list = (arr, title) => {
+        const found = arr.length ? arr.join(', ') : 'none yet';
+        return `<p style='margin:8px 0;'><b>${title}</b><br><span style='color:#ccc'>${found}</span></p>`;
+      };
+      const locked = Object.keys(LINEAGES).filter(k => LINEAGES[k].locked && !isLineageUnlocked(k)).map(k => LINEAGES[k].name + ' (' + LINEAGES[k].unlock + ')').join(', ') || 'none';
+      const unlocked = Object.keys(LINEAGES).filter(k => isLineageUnlocked(k)).map(k => LINEAGES[k].name).join(', ');
+      document.getElementById('recordsContent').innerHTML = `
+        <p><b>Best run:</b> ${Math.floor(r.bestTime)}s · <b>Deepest:</b> ${r.bestBiomes} / ${BIOMES.length} biomes</p>
+        ${list(r.biomes, 'Biomes discovered')}
+        ${list(r.mutations, 'Mutations discovered')}
+        <p style='margin:8px 0;'><b>Legacy trait</b><br><span style='color:#ccc'>${r.legacy ? MUTATIONS[r.legacy].name : 'none yet'}</span></p>
+        <p style='margin:8px 0;'><b>Lineages unlocked</b><br><span style='color:#ccc'>${unlocked}</span></p>
+        <p style='margin:8px 0;'><b>Lineages still hidden</b><br><span style='color:#888'>${locked}</span></p>
+      `;
+    }
+
+    function addParticle(x,y,color) {
+      for (let i=0;i<4;i++) {
+        const a = rand(0,Math.PI*2);
+        particles.push({ x, y, vx: Math.cos(a)*rand(30,90), vy: Math.sin(a)*rand(30,90), life: 0.4, color });
+      }
+    }
+
+    function pushOut(entity) {
+      for (const o of objects) {
+        if (o.solid) {
+          const d = dist(entity, o);
+          if (d < entity.r + o.r) {
+            const a = Math.atan2(entity.y-o.y, entity.x-o.x);
+            const push = (entity.r+o.r) - d;
+            entity.x += Math.cos(a)*push;
+            entity.y += Math.sin(a)*push;
+          }
+        }
+      }
+      entity.x = clamp(entity.x, entity.r, W-entity.r);
+      entity.y = clamp(entity.y, entity.r, H-entity.r);
+    }
+
+    function waterSlow(entity) {
+      for (const o of objects) {
+        if (o.kind === 'water' && dist(entity,o) < o.r) {
+          if (entity === player && player.mudLegs) return 1;
+          if (entity.mutations && entity.mutations.has('fins')) return entity === player && player.sleekFins ? 1.7 : 1.35;
+          if (entity.mutations && entity.mutations.has('legs')) return 0.85;
+          return 0.55;
+        }
+      }
+      return 1;
+    }
+    function inWater(entity) {
+      for (const o of objects) if (o.kind === 'water' && dist(entity,o) < o.r) return true;
+      return false;
+    }
+    function distToNearestWater(entity) {
+      let best = Infinity;
+      for (const o of objects) {
+        if (o.kind !== 'water') continue;
+        const d = Math.max(0, dist(entity, o) - o.r);
+        if (d < best) best = d;
+      }
+      return best;
+    }
+
+    function bite(attacker, target, mult=1) {
+      if (target === player && player.iframe > 0) return;
+      target.lastAttacker = attacker;
+      let dmg = attacker.biteDamage * mult;
+      if (attacker === player && player.hidden) { dmg *= 1.5; player.hidden = 0; }
+      if (attacker === player && player.venom) { target.poison = player.venomDuration || 5; target.poisonSource = player; }
+      if (attacker === player && player.claws) { target.bleed = player.bleedDuration || 3; }
+      if (attacker === player && player.toxicClaws) { target.poison = player.venomDuration || 5; target.poisonSource = player; }
+      if (attacker === player && player.aquaticPredator && inWater(player)) { dmg *= 1.3; }
+      if (attacker === player && player.livingTank && player.pounceTime > 0) { target.stun = 0.4; }
+      if (attacker === player && player.stunningBite) { target.stun = Math.max(target.stun || 0, 0.3); }
+      if (attacker === player && player.pounceTime > 0 && player.greatHorns) { target.stun = Math.max(target.stun || 0, 0.5); }
+      if (attacker === player && player.pounceTime > 0 && player.hookedHorns && target.mass < player.mass * 0.5) { target.stun = Math.max(target.stun || 0, 0.6); }
+      if (target === player && player.dorsalSpines && inWater(player)) { attacker.poison = 5; attacker.poisonSource = player; }
+      if (target === player && player.bluntHorns && player.pounceTime <= 0) { attacker.stun = Math.max(attacker.stun || 0, 0.3); }
+      if (target.armor) {
+        const attackAngle = Math.atan2(target.y - attacker.y, target.x - attacker.x);
+        const dot = Math.cos(attackAngle - (target.facing || 0));
+        if (dot > 0) {
+          dmg *= (1 - target.armor);
+          if (target.frontalRetaliation && attacker === player) {
+            player.hp -= 5;
+            log('It shrugs off your charge and rams back! -5 HP');
+          }
+        } else if (dot < -0.4 && target.rearBonus) {
+          dmg *= (1 + target.rearBonus);
+        }
+      }
+      target.hp -= dmg;
+      target.hit = 0.15;
+      if (target === player && player.thorns) { attacker.hp -= dmg * 0.2; }
+      const a = Math.atan2(target.y-attacker.y, target.x-attacker.x);
+      let kb = (dmg / target.mass) * 0.6;
+      if (attacker === player && (player.boneCrusher || player.boneCrusherJ)) kb *= 1.5;
+      target.x += Math.cos(a)*kb; target.y += Math.sin(a)*kb;
+      if (attacker !== player || player.pounceTime <= 0) {
+        attacker.x -= Math.cos(a)*kb*0.4; attacker.y -= Math.sin(a)*kb*0.4;
+      }
+      addParticle((attacker.x+target.x)/2, (attacker.y+target.y)/2, '#fff');
+      if (attacker === player) {
+        log(`Bite: -${Math.round(dmg)} HP`);
+      }
+    }
+
+    function doBite() {
+      if (player.biteCooldown > 0 || player.en < player.biteCost) return;
+      player.en -= player.biteCost;
+      player.biteCooldown = 0.35;
+      const camX = canvas.width/2 - player.x;
+      const camY = canvas.height/2 - player.y;
+      const mx = mouse.x - camX;
+      const my = mouse.y - camY;
+      const aim = Math.atan2(my - player.y, mx - player.x);
+      let hit = null, best = 9999;
+      for (const c of creatures) {
+        const d = dist(player, c);
+        const a = Math.atan2(c.y - player.y, c.x - player.x);
+        const diff = Math.atan2(Math.sin(a-aim), Math.cos(a-aim));
+        if (d < 60 && Math.abs(diff) < 1.0 && d < best) { best = d; hit = c; }
+      }
+      if (hit) {
+        bite(player, hit);
+      } else {
+        addParticle(player.x + Math.cos(aim)*22, player.y + Math.sin(aim)*22, '#aaa');
+      }
+    }
+
+    function doActive() {
+      const camX = canvas.width/2 - player.x;
+      const camY = canvas.height/2 - player.y;
+      const mx = mouse.x - camX;
+      const my = mouse.y - camY;
+      const aim = Math.atan2(my - player.y, mx - player.x);
+      if (player.active === 'spit') {
+        if (player.activeCooldown > 0 || player.en < 15) return;
+        player.en -= 15;
+        player.activeCooldown = 1.5;
+        let hit = null, best = 9999;
+        for (const c of creatures) {
+          const a = Math.atan2(c.y - player.y, c.x - player.x);
+          const diff = Math.atan2(Math.sin(a-aim), Math.cos(a-aim));
+          if (dist(player, c) < 220 && Math.abs(diff) < 0.2 && dist(player, c) < best) { best = dist(player, c); hit = c; }
+        }
+        if (hit) {
+          hit.poison = 5;
+          hit.hp -= 8;
+          hit.hit = 0.2;
+          addParticle((player.x+hit.x)/2, (player.y+hit.y)/2, '#4a9e4a');
+          log('Venom Spit hit!');
+        } else {
+          addParticle(player.x + Math.cos(aim)*40, player.y + Math.sin(aim)*40, '#4a9e4a');
+        }
+      } else if (player.active === 'roar') {
+        if (player.activeCooldown > 0 || player.en < 20) return;
+        player.en -= 20;
+        player.activeCooldown = 6;
+        for (const c of creatures) if (dist(player, c) < 220) c.fear = 3;
+        addParticle(player.x, player.y, '#e0c97f');
+        log('Roar!');
+      } else if (player.active === 'pulse') {
+        if (player.activeCooldown > 0 || player.en < 25) return;
+        player.en -= 25;
+        player.activeCooldown = 8;
+        for (const c of creatures) if (dist(player, c) < 140) { c.stun = 1.2; c.hp -= 8; c.hit = 0.2; }
+        addParticle(player.x, player.y, '#8a8ab8');
+        log('Pulse!');
+      }
+    }
+
+    function doEatOrInteract() {
+      let ate = false;
+      for (let i = foods.length - 1; i >= 0; i--) {
+        const f = foods[i];
+        if (dist(player, f) < player.r + f.r + 8) {
+          let gain = f.amount;
+          if (f.kind === 'berry' && player.lineage === 'grazer') gain += 10;
+          if (f.kind === 'berry' && player.ruminantGut) gain *= 1.8;
+          if (f.kind === 'carcass' && player.ruminantGut && !f.cooked) gain *= 0.6;
+          if (f.kind === 'berry' && player.dietHerbivore) gain *= 1.6;
+          if (f.kind === 'berry' && player.dietCarnivore) gain *= 0.6;
+          if (f.kind === 'carcass' && player.dietCarnivore) gain *= 1.6;
+          if (f.kind === 'carcass' && player.dietScavenger) gain *= f.cooked ? 1.7 : (f.freshKill ? 0.7 : 1.4);
+          player.hunger = Math.max(0, player.hunger - gain);
+          player.en = Math.min(player.maxEn, player.en + (f.kind==='berry'?12:25));
+          player.hp = Math.min(player.maxHp, player.hp + (f.kind==='carcass'?15:5));
+          player.ep += (f.kind==='berry'?5:12);
+          if (f.poisonous && !player.insulation) { player.poison = 4; log('That berry was poisonous!'); }
+          if (f.kind === 'carcass' && player.dietHerbivore && !player.insulation) { player.poison = 4; log('Meat makes you sick!'); }
+          foods.splice(i,1);
+          log(`Ate ${f.cooked ? 'cooked ' : ''}${f.kind}. Hunger -${Math.round(gain)}, EP +${f.kind==='berry'?5:12}`);
+          ate = true;
+          break;
+        }
+      }
+      if (ate) return;
+      for (let i = objects.length - 1; i >= 0; i--) {
+        const o = objects[i];
+        if (dist(player, o) > player.r + o.r + 10) continue;
+        if (o.kind === 'tree' && player.mutations.has('claws')) {
+          const gain = Math.round(8 * (player.treeBoost || 1));
+          player.ep += gain;
+          log(`Climbed tree for insects. EP +${gain}`);
+          o.r -= 2; if (o.r < 10) { objects.splice(i,1); log('Tree stripped.'); }
+          return;
+        }
+        if (o.kind === 'rock' && player.mutations.has('jaws')) {
+          player.ep += 15;
+          foods.push(makeFood('carcass', o.x, o.y));
+          objects.splice(i,1);
+          log('Smashed rock. Food and EP +15');
+          return;
+        }
+        if (o.kind === 'log' && !o.open) {
+          if (player.mutations.has('claws')) { o.open = true; o.solid = false; o.r = 12; player.ep += 10; log('Climbed over the log with your claws.'); return; }
+          if (player.mutations.has('legs')) { o.open = true; o.solid = false; o.r = 12; player.ep += 10; log('Leaped over the log with long legs.'); return; }
+          if (player.mutations.has('jaws')) { o.open = true; o.solid = false; o.r = 12; player.ep += 10; log('Sawed through the log with strong jaws.'); return; }
+          if (player.mutations.has('horns')) { o.open = true; o.solid = false; o.r = 12; player.ep += 10; log('Smashed the log aside with your horns.'); return; }
+          if (player.mass >= 2.0) { o.open = true; o.solid = false; o.r = 12; player.ep += 10; log('Your bulk shoved the log out of the way.'); return; }
+          log('A fallen log blocks the path. Climb, jump, saw, ram, or push with enough mass.');
+          return;
+        }
+        if (o.kind === 'nest' && !o.open && (player.mutations.has('claws') || player.mutations.has('jaws'))) {
+          o.open = true;
+          foods.push(makeFood('carcass', o.x, o.y));
+          for (let n=0; n<3; n++) foods.push(makeFood('berry', o.x + rand(-12,12), o.y + rand(-12,12)));
+          player.ep += 20;
+          log('Opened a nest. Food and EP +20');
+          return;
+        }
+        if (o.kind === 'nest' && !o.open) {
+          log('A nest of eggs. Need Claws or Jaws to reach them.');
+          return;
+        }
+      }
+    }
+
+    function killCreature(c, i) {
+      addParticle(c.x, c.y, c.color);
+      const carcass = makeFood('carcass', c.x, c.y);
+      if (c.lastAttacker === player) carcass.freshKill = true;
+      foods.push(carcass);
+      creatures.splice(i,1);
+      if (c.lastAttacker === player) {
+        player.ep += 20;
+        log(`Killed a ${c.type}. EP +20`);
+        if (c.type === 'apex') { player.apexKilled = true; log('Apex defeated. Migration becomes possible.'); }
+      }
+    }
+
+    function migrationChecklist() {
+      const biomeName = BIOMES[biomeIndex].name;
+      if (biomeName === 'Wetlands') {
+        return [
+          { label: 'Aquatic adaptation (Fins/Gills) + touched water', done: player.touchedWater },
+          { label: 'Kill the apex', done: player.apexKilled },
+          { label: 'Survive a Drought', done: player.survivedDrought }
+        ];
+      }
+      if (biomeName === 'Highlands') {
+        return [
+          { label: 'Cold adaptation (Fur or Insulation)', done: player.mutations.has('fur') || player.mutations.has('insulation') },
+          { label: 'Survive a Wildfire', done: player.survivedWildfire },
+          { label: 'Kill the apex', done: player.apexKilled },
+          { label: 'Mass ≥ 3.0', done: player.mass >= 3.0 }
+        ];
+      }
+      return [
+        { label: 'Mass ≥ 2.5', done: player.mass >= 2.5 },
+        { label: 'Kill the apex', done: player.apexKilled },
+        { label: 'Travel far and wide', done: player.distanceTraveled >= 4000 }
+      ];
+    }
+
+    function canMigrate() {
+      return migrationChecklist().some(c => c.done);
+    }
+
+    function chooseMutations() {
+      state = 'mutating';
+      const weights = LINEAGES[player.lineage].weights || {};
+      const pool = [...unlockedIds].map(id => MUTATIONS[id]).filter(m =>
+        !player.mutations.has(m.id) &&
+        (!m.requires || m.requires.every(req => player.mutations.has(req))) &&
+        (!m.excludes || !m.excludes.some(ex => player.mutations.has(ex)))
+      );
+      const picks = [];
+      while (picks.length < 3 && pool.length) {
+        const total = pool.reduce((sum, m) => sum + (weights[m.id] || 1), 0);
+        let w = Math.random() * total, pick = null, pickIndex = -1;
+        for (let i = 0; i < pool.length; i++) {
+          w -= (weights[pool[i].id] || 1);
+          if (w <= 0 && pick === null) { pick = pool[i]; pickIndex = i; }
+        }
+        if (pick === null) { pick = pool[0]; pickIndex = 0; }
+        pool.splice(pickIndex, 1);
+        if (!picks.includes(pick)) picks.push(pick);
+      }
+      const row = document.getElementById('mutationCards');
+      row.innerHTML = '';
+      for (const m of picks) {
+        const d = document.createElement('div');
+        d.className = 'card';
+        d.innerHTML = `<h3>${m.name}</h3><div class='tag'>${m.category} · ${m.tradeoff}</div><p style='font-size:13px;margin:8px 0 0;'>${m.desc}<br><br><b>${m.effect}</b></p>`;
+        d.onclick = () => applyMutation(m);
+        row.appendChild(d);
+      }
+      document.getElementById('mutationScreen').classList.remove('hidden');
+    }
+
+    function applyMutationEffects(m) {
+      if (m.active) { player.active = m.id; player.activeName = m.name; player.activeCooldown = 0; }
+      if (m.id === 'claws') { player.claws = true; player.biteDamage += 3; player.r -= 1; }
+      if (m.id === 'legs') { player.speed *= 1.25; player.maxHp -= 5; player.hp = Math.min(player.hp, player.maxHp); player.r -= 1; }
+      if (m.id === 'hide') { player.maxHp += 30; player.hp += 30; player.mass += 0.5; player.speed *= 0.88; player.r += 4; }
+      if (m.id === 'venom') { player.venom = true; player.biteCost += 2; }
+      if (m.id === 'jaws') { player.jaws = true; player.biteDamage += 5; player.mass += 0.2; player.speed *= 0.92; player.r += 2; }
+      if (m.id === 'horns') { player.horns = true; player.biteDamage += 5; }
+      if (m.id === 'fins') { player.fins = true; player.speed *= 0.95; }
+      if (m.id === 'gills') { player.gills = true; }
+      if (m.id === 'fur') { player.fur = true; player.maxHp += 20; player.hp += 20; player.mass += 0.2; player.speed *= 0.95; player.r += 2; }
+      if (m.id === 'arboreal_limbs') { player.arboreal = true; player.speed *= 1.08; player.r += 1; }
+      if (m.id === 'bone_plate') { player.bonePlate = true; player.maxHp += 20; player.hp += 20; player.mass += 0.3; player.speed *= 0.95; player.r += 2; }
+      if (m.id === 'toxic_spit') { player.toxicSpit = true; player.venomDuration = 8; player.biteCost += 1; }
+      if (m.id === 'rending_claws') { player.rendingClaws = true; player.biteDamage += 2; player.bleedDuration = 6; }
+      if (m.id === 'climbing_claws') { player.climbingClaws = true; player.speed *= 1.08; player.treeBoost = 1.5; }
+      if (m.id === 'camouflage') { player.camouflage = true; }
+      if (m.id === 'thorns') { player.thorns = true; }
+      if (m.id === 'insulation') { player.insulation = true; player.maxHp += 10; player.hp += 10; }
+      if (m.id === 'numbing_venom') { player.numbingVenom = true; }
+      if (m.id === 'parasitic_venom') { player.parasiticVenom = true; }
+      if (m.id === 'strider') { player.strider = true; player.speed *= 1.15; }
+      if (m.id === 'long_jumper') { player.longJumper = true; }
+      if (m.id === 'mud_legs') { player.mudLegs = true; }
+      if (m.id === 'bone_crusher_j') { player.boneCrusherJ = true; }
+      if (m.id === 'stunning_bite') { player.stunningBite = true; }
+      if (m.id === 'ruminant_gut') { player.ruminantGut = true; }
+      if (m.id === 'sleek_fins') { player.sleekFins = true; }
+      if (m.id === 'dorsal_spines') { player.dorsalSpines = true; }
+      if (m.id === 'whiskers') { player.whiskers = true; }
+      if (m.id === 'great_horns') { player.greatHorns = true; player.mass += 0.3; player.speed *= 0.95; }
+      if (m.id === 'blunt_horns') { player.bluntHorns = true; player.maxHp += 15; player.hp += 15; }
+      if (m.id === 'hooked_horns') { player.hookedHorns = true; }
+      if (m.id === 'diet_carnivore') { player.dietCarnivore = true; }
+      if (m.id === 'diet_herbivore') { player.dietHerbivore = true; }
+      if (m.id === 'diet_scavenger') { player.dietScavenger = true; }
+    }
+
+    function applyMutation(m) {
+      player.mutations.add(m.id);
+      markDiscovered('mutations', m.id);
+      applyMutationEffects(m);
+      checkSynergies();
+      player.ep = 0;
+      player.epNext += 60;
+      state = 'playing';
+      lastTime = performance.now();
+      requestAnimationFrame(loop);
+      document.getElementById('mutationScreen').classList.add('hidden');
+      log(`Evolved: ${m.name}!`);
+      document.getElementById('statLine').textContent = `Lineage: ${player.lineage} · Biome: ${BIOMES[biomeIndex].name} · Mass: ${player.mass.toFixed(1)} · Speed: ${Math.round(player.speed)} · Mutations: ${[...player.mutations].join(', ')}`;
+    }
+
+    function applyLegacy(id) {
+      const m = MUTATIONS[id];
+      if (!m) return;
+      player.mutations.add(id);
+      markDiscovered('mutations', id);
+      applyMutationEffects(m);
+      checkSynergies();
+      log(`Inherited: ${m.name}`);
+    }
+
+    function openMigrateChoice() {
+      state = 'migrating';
+      document.getElementById('migrateScreen').classList.remove('hidden');
+    }
+
+    function openReproduceChoice() {
+      if (player.mutations.size === 0) { reproduce(null); return; }
+      const row = document.getElementById('reproduceCards');
+      row.innerHTML = '';
+      for (const id of player.mutations) {
+        const m = MUTATIONS[id];
+        const d = document.createElement('div');
+        d.className = 'card';
+        d.innerHTML = `<h3>${m.name}</h3><div class='tag'>${m.category}</div><p style='font-size:13px;margin:8px 0 0;'>${m.desc}</p>`;
+        d.onclick = () => reproduce(id);
+        row.appendChild(d);
+      }
+      document.getElementById('reproduceScreen').classList.remove('hidden');
+    }
+
+    function reproduce(id) {
+      const priorMass = player.mass;
+      const newGen = (player.generation || 1) + 1;
+      record.legacy = id || record.legacy;
+      saveRecord();
+      genFactor += 0.15;
+      player = makePlayer(lineageKey);
+      player.generation = newGen;
+      player.mass += priorMass * 0.1;
+      if (id) applyLegacy(id);
+      spawnWorld();
+      player.x = W/2; player.y = H/2;
+      dayTime = 0;
+      document.getElementById('reproduceScreen').classList.add('hidden');
+      state = 'playing';
+      lastTime = performance.now();
+      requestAnimationFrame(loop);
+      log(`A new generation begins. You are Generation ${newGen}${id ? `, born with ${MUTATIONS[id].name}` : ''}. The ecosystem grows more dangerous.`);
+      document.getElementById('statLine').textContent = `Lineage: ${player.lineage} (Gen ${newGen}) · Biome: ${BIOMES[biomeIndex].name} · Mass: ${player.mass.toFixed(1)} · Speed: ${Math.round(player.speed)}`;
+      updateBiomeHUD();
+    }
+
+    function updateAI(dt) {
+      for (let i = creatures.length - 1; i >= 0; i--) {
+        const c = creatures[i];
+        const ox = c.x, oy = c.y;
+        c.timer -= dt;
+        if (c.bleed > 0) { c.bleed -= dt; c.hp -= 2*dt; }
+        if (c.poison > 0) {
+          c.poison -= dt;
+          const tick = 3*dt;
+          c.hp -= tick;
+          if (c.poisonSource === player && player.parasiticVenom) player.hp = Math.min(player.maxHp, player.hp + tick * 0.5);
+        }
+        if (c.hit) c.hit -= dt;
+        if (c.fear > 0) c.fear -= dt;
+        if (c.stun > 0) { c.stun -= dt; c.telegraph = 0; }
+        if (c.hp <= 0) { killCreature(c, i); continue; }
+
+        if (c.stun > 0) { pushOut(c); c.facing = Math.atan2(c.y - oy, c.x - ox); continue; }
+
+        const poisonSlow = (c.poison > 0 && c.poisonSource === player && player.numbingVenom) ? 0.7 : 1;
+
+        if (c.type === 'prey') {
+          const dPlayer = dist(c, player);
+          let targetFood = null, best = c.sense;
+          for (const f of foods) {
+            if (f.kind !== 'berry' || f.poisonous) continue;
+            const d = dist(c, f);
+            if (d < best) { best = d; targetFood = f; }
+          }
+          const psp = c.speed * (night ? 0.6 : 1) * poisonSlow;
+          if ((dPlayer < 150 && dPlayer > c.r + player.r) || c.fear > 0) {
+            const a = Math.atan2(c.y - player.y, c.x - player.x);
+            c.x += Math.cos(a) * psp * dt * waterSlow(c);
+            c.y += Math.sin(a) * psp * dt * waterSlow(c);
+          } else if (targetFood && best > c.r + targetFood.r + 4) {
+            const a = Math.atan2(targetFood.y - c.y, targetFood.x - c.x);
+            c.x += Math.cos(a) * psp * 0.7 * dt * waterSlow(c);
+            c.y += Math.sin(a) * psp * 0.7 * dt * waterSlow(c);
+          } else if (targetFood) {
+            foods.splice(foods.indexOf(targetFood), 1);
+            c.hp = Math.min(c.maxHp, c.hp + 5);
+            if (c.species === 'mossback') {
+              for (let j = foods.length - 1; j >= 0; j--) {
+                const f2 = foods[j];
+                if (f2.kind === 'berry' && dist(c, f2) < 40) { foods.splice(j, 1); c.hp = Math.min(c.maxHp, c.hp + 5); }
+              }
+              pendingSeeds.push({ time: 20, x: clamp(c.x + rand(-150,150), 40, W-40), y: clamp(c.y + rand(-150,150), 40, H-40) });
+            }
+          } else {
+            if (c.timer <= 0) { c.timer = rand(1,3); c.ai = { x: rand(-1,1), y: rand(-1,1) }; }
+            const n = normalize(c.ai.x, c.ai.y);
+            let hx = n.x, hy = n.y;
+            if (c.herd) {
+              let nearest = null, bd = 120;
+              for (const o of creatures) {
+                if (o.type === 'prey' && o !== c && dist(c, o) < bd) { bd = dist(c, o); nearest = o; }
+              }
+              if (nearest) { hx += (nearest.x - c.x) * 0.01; hy += (nearest.y - c.y) * 0.01; }
+              const n2 = normalize(hx, hy);
+              hx = n2.x; hy = n2.y;
+            }
+            c.x += hx * psp * 0.4 * dt * waterSlow(c);
+            c.y += hy * psp * 0.4 * dt * waterSlow(c);
+          }
+        }
+
+        if (c.type === 'predator' && c.scavenger) {
+          let carcass = null, best = c.sense;
+          for (const f of foods) {
+            if (f.kind === 'carcass' && dist(c, f) < best) { best = dist(c, f); carcass = f; }
+          }
+          const psp = c.speed * (night ? 1.1 : 1) * poisonSlow;
+          if (carcass && best > c.r + carcass.r + 4) {
+            const a = Math.atan2(carcass.y - c.y, carcass.x - c.x);
+            c.x += Math.cos(a) * psp * dt * waterSlow(c);
+            c.y += Math.sin(a) * psp * dt * waterSlow(c);
+          } else if (carcass) {
+            const i = foods.indexOf(carcass);
+            if (i >= 0) { foods.splice(i,1); c.hp = Math.min(c.maxHp, c.hp + 25); }
+          } else {
+            if (c.timer <= 0) { c.timer = rand(1,3); c.ai = { x: rand(-1,1), y: rand(-1,1) }; }
+            const n = normalize(c.ai.x, c.ai.y);
+            c.x += n.x * psp * 0.3 * dt * waterSlow(c);
+            c.y += n.y * psp * 0.3 * dt * waterSlow(c);
+          }
+          pushOut(c);
+          c.facing = Math.atan2(c.y - oy, c.x - ox);
+          continue;
+        }
+
+        if (c.type === 'predator') {
+          if (c.waterTether && !inWater(c) && distToNearestWater(c) > 120) {
+            let nearestWater = null, wd = Infinity;
+            for (const o of objects) { if (o.kind !== 'water') continue; const d = dist(c,o) - o.r; if (d < wd) { wd = d; nearestWater = o; } }
+            if (nearestWater) {
+              const a = Math.atan2(nearestWater.y - c.y, nearestWater.x - c.x);
+              c.x += Math.cos(a) * c.speed * 1.1 * dt;
+              c.y += Math.sin(a) * c.speed * 1.1 * dt;
+              pushOut(c);
+              c.facing = Math.atan2(c.y - oy, c.x - ox);
+              continue;
+            }
+          }
+          let target = null, best = c.sense;
+          for (const o of creatures) {
+            if (o.type !== 'prey' || o === c) continue;
+            const d = dist(c, o);
+            if (d < best) { best = d; target = o; }
+          }
+          const camo = player.camouflage && player.hidden;
+          const dPlayer = dist(c, player) + (camo ? 400 : 0);
+          const threat = player.mass > c.mass * 1.8 || c.hp < c.maxHp*0.35 || c.fear > 0;
+          const cornered = threat && dPlayer < c.r + player.r + 4 && c.biteCooldown <= 0 && c.telegraph <= 0;
+          if (cornered) { c.telegraph = c.species === 'razorcat' ? 0.75 : 0.35; c.attackTarget = player; }
+          const psp = c.speed * (night ? 1.25 : 1) * (c.aquatic ? (inWater(c) ? 1.4 : 0.6) : 1) * (c.nocturnal ? (night ? 1.4 : 0.35) : 1) * poisonSlow;
+          if (target && !threat) {
+            const a = Math.atan2(target.y - c.y, target.x - c.x);
+            const sp = psp * (c.hp < c.maxHp*0.5 ? 1.15 : 1);
+            c.x += Math.cos(a) * sp * dt * waterSlow(c);
+            c.y += Math.sin(a) * sp * dt * waterSlow(c);
+            if (best < c.r + target.r + 4 && c.biteCooldown <= 0 && c.telegraph <= 0) {
+              c.telegraph = c.species === 'razorcat' ? 0.75 : 0.35;
+              c.attackTarget = target;
+            }
+          } else if (dPlayer < 260 && !threat) {
+            const a = Math.atan2(player.y - c.y, player.x - c.x);
+            const sp = psp * (c.hp < c.maxHp*0.5 ? 1.15 : 1);
+            if (c.telegraph <= 0) {
+              c.x += Math.cos(a) * sp * dt * waterSlow(c);
+              c.y += Math.sin(a) * sp * dt * waterSlow(c);
+            }
+            if (dPlayer < c.r + player.r + 4 && c.biteCooldown <= 0 && c.telegraph <= 0) {
+              c.telegraph = c.species === 'razorcat' ? 0.75 : 0.35;
+              c.attackTarget = player;
+            }
+          } else if (dPlayer < 320 && threat) {
+            if (c.telegraph <= 0) {
+              const a = Math.atan2(c.y - player.y, c.x - player.x);
+              c.x += Math.cos(a) * psp * 1.2 * dt * waterSlow(c);
+              c.y += Math.sin(a) * psp * 1.2 * dt * waterSlow(c);
+            }
+          } else {
+            if (c.timer <= 0) { c.timer = rand(1,3); c.ai = { x: rand(-1,1), y: rand(-1,1) }; }
+            const n = normalize(c.ai.x, c.ai.y);
+            c.x += n.x * psp * 0.35 * dt * waterSlow(c);
+            c.y += n.y * psp * 0.35 * dt * waterSlow(c);
+          }
+          if (c.telegraph > 0) {
+            c.telegraph -= dt;
+            if (c.telegraph <= 0) {
+              const t = c.attackTarget;
+              if (t) {
+                const d = dist(c, t);
+                if (d < c.r + t.r + 45) {
+                  const a = Math.atan2(t.y - c.y, t.x - c.x);
+                  if (d > c.r + t.r + 3) {
+                    const close = Math.min(d - (c.r + t.r + 3), 30);
+                    c.x += Math.cos(a) * close;
+                    c.y += Math.sin(a) * close;
+                  }
+                  bite(c, t);
+                }
+              }
+              c.biteCooldown = 0.7;
+              c.attackTarget = null;
+            }
+          }
+          if (c.biteCooldown > 0) c.biteCooldown -= dt;
+        }
+
+        if (c.type === 'apex') {
+          const home = c.territory;
+          const dHome = dist(c, home);
+          const dPlayer = dist(c, player);
+          let intruder = null, best = 240;
+          for (const o of [...creatures, player]) {
+            if (o === c) continue;
+            const dTerr = Math.hypot(o.x - home.x, o.y - home.y);
+            if (dTerr < 160) {
+              const d = Math.hypot(o.x - c.x, o.y - c.y);
+              if (d < best) { best = d; intruder = o; }
+            }
+          }
+          if (dHome > 220) {
+            const a = Math.atan2(home.y - c.y, home.x - c.x);
+            c.x += Math.cos(a) * c.speed * 1.3 * dt * waterSlow(c);
+            c.y += Math.sin(a) * c.speed * 1.3 * dt * waterSlow(c);
+          } else if (intruder) {
+            const a = Math.atan2(intruder.y - c.y, intruder.x - c.x);
+            c.x += Math.cos(a) * c.speed * dt * waterSlow(c);
+            c.y += Math.sin(a) * c.speed * dt * waterSlow(c);
+            if (best < c.r + intruder.r + 4 && c.biteCooldown <= 0 && c.telegraph <= 0) {
+              c.telegraph = 0.5;
+              c.attackTarget = intruder;
+            }
+          } else if (dPlayer < 220) {
+            const a = Math.atan2(player.y - c.y, player.x - c.x);
+            c.x += Math.cos(a) * c.speed * dt * waterSlow(c);
+            c.y += Math.sin(a) * c.speed * dt * waterSlow(c);
+            if (dPlayer < c.r + player.r + 4 && c.biteCooldown <= 0 && c.telegraph <= 0) {
+              c.telegraph = 0.5;
+              c.attackTarget = player;
+            }
+          } else {
+            if (c.timer <= 0) { c.timer = rand(1,3); c.ai = { x: rand(-1,1), y: rand(-1,1) }; }
+            const n = normalize(c.ai.x, c.ai.y);
+            c.x += n.x * c.speed * 0.3 * dt * waterSlow(c);
+            c.y += n.y * c.speed * 0.3 * dt * waterSlow(c);
+          }
+          if (c.telegraph > 0) {
+            c.telegraph -= dt;
+            if (c.telegraph <= 0) {
+              const t = c.attackTarget;
+              if (t) {
+                const d = dist(c, t);
+                if (d < c.r + t.r + 60) {
+                  const a = Math.atan2(t.y - c.y, t.x - c.x);
+                  if (d > c.r + t.r + 3) {
+                    const close = Math.min(d - (c.r + t.r + 3), 45);
+                    c.x += Math.cos(a) * close;
+                    c.y += Math.sin(a) * close;
+                  }
+                  bite(c, t);
+                }
+              }
+              c.biteCooldown = 1.2;
+              c.attackTarget = null;
+            }
+          }
+          if (c.biteCooldown > 0) c.biteCooldown -= dt;
+        }
+
+        pushOut(c);
+        const dx = c.x - ox, dy = c.y - oy;
+        if (dx*dx + dy*dy > 0.01) c.facing = Math.atan2(dy, dx);
+      }
+    }
+
+    function updatePlayer(dt) {
+      player.biteCooldown = Math.max(0, player.biteCooldown - dt);
+      player.dodgeCooldown = Math.max(0, player.dodgeCooldown - dt);
+      player.iframe = Math.max(0, player.iframe - dt);
+      player.activeCooldown = Math.max(0, player.activeCooldown - dt);
+
+      if (player.whiskers) {
+        player.whiskerTimer -= dt;
+        if (player.whiskerTimer <= 0) {
+          player.whiskerTimer = 4;
+          const threat = creatures.find(c => c.type !== 'prey' && inWater(c) && dist(c, player) < 400);
+          if (threat) log('Whiskers twitch — something dangerous moves in the water.');
+        }
+      }
+
+      let dx = 0, dy = 0;
+      if (KEY['KeyW'] || KEY['ArrowUp']) dy -= 1;
+      if (KEY['KeyS'] || KEY['ArrowDown']) dy += 1;
+      if (KEY['KeyA'] || KEY['ArrowLeft']) dx -= 1;
+      if (KEY['KeyD'] || KEY['ArrowRight']) dx += 1;
+      const move = normalize(dx, dy);
+
+      const camX = canvas.width/2 - player.x;
+      const camY = canvas.height/2 - player.y;
+      const mx = mouse.x - camX;
+      const my = mouse.y - camY;
+      const aim = Math.atan2(my - player.y, mx - player.x);
+
+      const space = KEY['Space'];
+      const spacePressed = space && !player.spaceHeld;
+      const spaceReleased = !space && player.spaceHeld;
+      player.spaceHeld = space;
+
+      if (spacePressed && player.biteCooldown <= 0 && player.pounceTime <= 0) {
+        player.charging = true;
+        player.charge = 0;
+        player.chargeAim = aim;
+      }
+      if (player.charging) {
+        player.charge = Math.min(player.charge + dt, 0.8);
+        player.chargeAim = aim;
+        if (spaceReleased) {
+          player.charging = false;
+          if (player.charge < 0.25) {
+            doBite();
+          } else if (player.en >= 15) {
+            player.en -= 15;
+            player.pounceTime = 0.35;
+            player.pounceDir = player.chargeAim;
+            player.pouncePower = player.charge;
+            player.pounceHits.clear();
+            player.biteCooldown = 0.5;
+            player.hidden = 0;
+            log('Pounce!');
+          } else {
+            log('Not enough Energy to pounce');
+          }
+        }
+      }
+
+      const q = KEY['KeyQ'];
+      const qPressed = q && !player.qHeld;
+      player.qHeld = q;
+      if (qPressed && player.dodgeCooldown <= 0 && player.dodgeTime <= 0 && player.en >= 20) {
+        player.dodgeTime = 0.25;
+        player.iframe = 0.25;
+        player.dodgeCooldown = 0.6;
+        player.en -= 20;
+        const dir = (dx !== 0 || dy !== 0) ? move : {x: Math.cos(aim), y: Math.sin(aim)};
+        player.dodgeDir = dir;
+        player.hidden = 0;
+      }
+
+      const ws = waterSlow(player);
+      if (player.pounceTime > 0) {
+        const psp = (340 + player.pouncePower * 180) * ws * (player.swiftHunter ? 1.3 : 1) * (player.longJumper ? 1.5 : 1);
+        player.x += Math.cos(player.pounceDir) * psp * dt;
+        player.y += Math.sin(player.pounceDir) * psp * dt;
+        for (const c of creatures) {
+          if (player.pounceHits.has(c)) continue;
+          if (dist(player, c) < player.r + c.r + 20) {
+            const hornMult = player.horns ? 0.2 : 0;
+            bite(player, c, 1.2 + hornMult + player.pouncePower * (player.horns ? 1.5 : 1.2));
+            player.pounceHits.add(c);
+          }
+        }
+        player.pounceTime -= dt;
+        if (player.pounceTime <= 0) {
+          player.pounceHits.clear();
+          addParticle(player.x, player.y, '#fff');
+        }
+      } else if (player.dodgeTime > 0) {
+        const dps = 340 * ws;
+        player.x += player.dodgeDir.x * dps * dt;
+        player.y += player.dodgeDir.y * dps * dt;
+        player.dodgeTime -= dt;
+        if (Math.random() < 0.4) {
+          particles.push({ x: player.x, y: player.y, vx: rand(-40,40), vy: rand(-40,40), life: 0.25, color: player.color });
+        }
+      } else {
+        const moving = dx !== 0 || dy !== 0;
+        let sp = player.speed;
+        if (KEY['ShiftLeft'] && player.en > 0 && moving) {
+          sp *= 1.6;
+          player.en -= 8 * dt;
+        }
+        const stepX = move.x * sp * dt * ws, stepY = move.y * sp * dt * ws;
+        player.x += stepX;
+        player.y += stepY;
+        player.distanceTraveled += Math.hypot(stepX, stepY);
+
+        if (moving) { player.hiddenTimer = 0; player.hidden = 0; }
+        else { player.hiddenTimer += dt; if (player.hiddenTimer > (player.camouflage ? 0.6 : 1.5)) player.hidden = 1; }
+      }
+      if ((player.mutations.has('fins') || player.mutations.has('gills')) && inWater(player)) player.touchedWater = true;
+      pushOut(player);
+
+      for (const o of objects) {
+        if (o.kind !== 'exit') continue;
+        const overlapping = dist(player, o) < player.r + o.r;
+        if (!overlapping) { player.migrateDismissed = false; continue; }
+        if (player.migrateDismissed) continue;
+        player.migrateDismissed = true;
+        if (canMigrate()) {
+          openMigrateChoice();
+        } else {
+          const items = migrationChecklist().map(c => c.label).join(' / ');
+          log(`The way is not open yet. Options: ${items}`);
+        }
+        return;
+      }
+
+      player.hunger += (LINEAGES[player.lineage].hungerRate) * dt;
+      player.hunger = clamp(player.hunger, 0, player.maxHunger);
+
+      let regen = (player.hunger > 80) ? 3 : 15;
+      if (player.mutations.has('gills') && inWater(player)) regen *= 2;
+      player.en = clamp(player.en + regen * dt, 0, player.maxEn);
+      if (player.hunger >= 100) player.hp -= 1.5 * dt;
+
+      if (player.bleed > 0) { player.bleed -= dt; player.hp -= 2*dt; }
+      if (player.poison > 0) { player.poison -= dt; if (!player.insulation) player.hp -= 3*dt; }
+
+      if (KEY['KeyE']) { if (!player.eHeld) doEatOrInteract(); player.eHeld = true; }
+      else { player.eHeld = false; }
+
+      if (KEY['KeyF']) { if (!player.fHeld) doActive(); player.fHeld = true; }
+      else { player.fHeld = false; }
+
+      if (player.ep >= player.epNext) chooseMutations();
+
+      if (player.hp <= 0) endGame(false);
+    }
+
+    function updateParticles(dt) {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.life -= dt;
+        if (p.life <= 0) particles.splice(i,1);
+      }
+    }
+
+    function deriveRole() {
+      if (player.mutations.has('venom') && player.mutations.has('claws')) return 'Night Stalker';
+      if (player.mutations.has('horns') && player.mutations.has('hide')) return 'Living Tank';
+      if (player.mutations.has('fins') && player.mutations.has('gills')) return 'Aquatic Predator';
+      if (player.mutations.has('jaws') && player.mutations.has('horns')) return 'Bone Crusher';
+      if (player.mutations.has('fur') && player.mutations.has('hide')) return 'Fortress';
+      if (player.mutations.has('legs') && player.mutations.has('fins')) return 'Swift Hunter';
+      if (player.mutations.has('spit') && player.mutations.has('venom')) return 'Venom Spitter';
+      if (player.mutations.has('roar') && player.mutations.has('hide')) return 'Pack Alpha';
+      if (player.mutations.has('legs')) return 'Strider';
+      if (player.mutations.has('claws')) return 'Climber';
+      if (player.mutations.has('horns')) return 'Charger';
+      return 'Wanderer';
+    }
+
+    function endGame(win) {
+      state = 'gameover';
+      markDiscovered('lineages', player.lineage);
+      for (let i=0; i<=biomeIndex; i++) markDiscovered('biomes', BIOMES[i].name);
+      for (const id of player.mutations) markDiscovered('mutations', id);
+      if (worldTime > record.bestTime) record.bestTime = worldTime;
+      if (biomeIndex + 1 > record.bestBiomes) record.bestBiomes = biomeIndex + 1;
+      if (win && player.mutations.size > 0) {
+        const muts = [...player.mutations];
+        record.legacy = muts[Math.floor(Math.random()*muts.length)];
+      }
+      saveRecord();
+      checkLineageUnlocks();
+      document.getElementById('gameOverScreen').classList.remove('hidden');
+      document.getElementById('endTitle').textContent = win ? 'You Survived!' : 'You Died';
+      const role = deriveRole();
+      const mNames = [...player.mutations].map(id => MUTATIONS[id].name).join(', ') || 'none';
+      const sNames = [...player.synergies].map(k => SYNERGIES[k].name).join(', ') || 'none';
+      document.getElementById('endStats').innerHTML = `
+        <h3 style='margin:0 0 8px;color:#7fbf55;'>${LINEAGES[player.lineage].name} — ${role} (Gen ${player.generation || 1})</h3>
+        <p style='margin:4px 0;'>Mass: ${player.mass.toFixed(1)} · Speed: ${Math.round(player.speed)} · Biomes: ${biomeIndex + 1}</p>
+        <p style='margin:4px 0;'>Time: ${Math.floor(worldTime)}s · Final HP: ${Math.ceil(player.hp)}</p>
+        <p style='margin:4px 0;'><b>Mutations:</b> ${mNames}</p>
+        <p style='margin:4px 0;'><b>Synergies:</b> ${sNames}</p>
+      `;
+    }
+
+    function drawEntity(c) {
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.globalAlpha = c === player && player.hidden ? 0.55 : 1;
+      ctx.fillStyle = c.color;
+      ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI*2); ctx.fill();
+      // features
+      if (c === player) {
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+        if (player.mutations.has('claws')) {
+          ctx.fillStyle = '#ddd';
+          for (const a of [0.3, -0.3, Math.PI+0.3, Math.PI-0.3]) {
+            const lx = Math.cos(a)*c.r*0.9, ly = Math.sin(a)*c.r*0.9;
+            ctx.beginPath(); ctx.arc(lx, ly, 4, 0, Math.PI*2); ctx.fill();
+          }
+        }
+        if (player.mutations.has('jaws')) {
+          ctx.fillStyle = '#aaa';
+          const a = Math.atan2(mouse.y - canvas.height/2, mouse.x - canvas.width/2);
+          ctx.beginPath(); ctx.arc(Math.cos(a)*c.r*0.7, Math.sin(a)*c.r*0.7, c.r*0.35, 0, Math.PI*2); ctx.fill();
+        }
+        if (player.mutations.has('venom')) {
+          ctx.strokeStyle = '#4a9e4a'; ctx.lineWidth = 3; ctx.stroke();
+        }
+        if (player.mutations.has('hide')) {
+          ctx.strokeStyle = '#5a5a5a'; ctx.lineWidth = 4; ctx.stroke();
+        }
+        if (player.mutations.has('horns')) {
+          ctx.strokeStyle = '#aaa'; ctx.lineWidth = 2;
+          const a = Math.atan2(mouse.y - canvas.height/2, mouse.x - canvas.width/2);
+          for (const off of [-0.22, 0.22]) {
+            const ha = a + off;
+            ctx.beginPath(); ctx.moveTo(Math.cos(ha)*c.r*0.6, Math.sin(ha)*c.r*0.6); ctx.lineTo(Math.cos(ha)*c.r*1.2, Math.sin(ha)*c.r*1.2); ctx.stroke();
+          }
+        }
+        if (player.mutations.has('fins')) {
+          ctx.fillStyle = '#4a9e9e';
+          ctx.beginPath(); ctx.arc(-c.r*0.9, 0, 4, 0, Math.PI*2); ctx.fill();
+        }
+        if (player.mutations.has('legs')) {
+          ctx.fillStyle = c.color;
+          ctx.beginPath(); ctx.arc(-c.r*0.7, c.r*0.7, 4, 0, Math.PI*2); ctx.fill();
+          ctx.beginPath(); ctx.arc(c.r*0.7, c.r*0.7, 4, 0, Math.PI*2); ctx.fill();
+        }
+        if (player.mutations.has('gills')) {
+          ctx.strokeStyle = '#5a9e9e'; ctx.lineWidth = 2;
+          for (let i = -1; i <= 1; i++) {
+            ctx.beginPath(); ctx.arc(c.r*0.6, i*5, 4, -0.5, 0.5); ctx.stroke();
+            ctx.beginPath(); ctx.arc(-c.r*0.6, i*5, 4, Math.PI-0.5, Math.PI+0.5); ctx.stroke();
+          }
+        }
+        if (player.mutations.has('fur')) {
+          ctx.strokeStyle = '#d0d0d0'; ctx.lineWidth = 1;
+          for (let a = 0; a < Math.PI*2; a += 0.4) {
+            ctx.beginPath(); ctx.moveTo(Math.cos(a)*c.r, Math.sin(a)*c.r); ctx.lineTo(Math.cos(a)*(c.r+4), Math.sin(a)*(c.r+4)); ctx.stroke();
+          }
+        }
+        if (player.mutations.has('spit')) {
+          ctx.fillStyle = '#4a9e4a';
+          const a = Math.atan2(mouse.y - canvas.height/2, mouse.x - canvas.width/2);
+          ctx.beginPath(); ctx.arc(Math.cos(a)*c.r*0.5, Math.sin(a)*c.r*0.5, 4, 0, Math.PI*2); ctx.fill();
+        }
+        if (player.mutations.has('roar')) {
+          ctx.strokeStyle = 'rgba(240,200,100,0.6)'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(0, 0, c.r + 6, 0, Math.PI*2); ctx.stroke();
+        }
+        if (player.mutations.has('pulse')) {
+          ctx.strokeStyle = 'rgba(140,140,220,0.6)'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(0, 0, c.r + 6, 0, Math.PI*2); ctx.stroke();
+        }
+      } else {
+        if (c.hit > 0) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0,0,c.r,0,Math.PI*2); ctx.fill(); }
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(c.name || c.type, 0, -c.r - 10);
+      }
+      // telegraph / dodge visuals
+      if (c.telegraph > 0) {
+        ctx.fillStyle = '#f00';
+        ctx.font = 'bold 18px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('!', 0, -c.r - 14);
+        if (c.species === 'razorcat') {
+          ctx.strokeStyle = '#d00'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(0, c.r*0.5, c.r*0.6, Math.PI, 0); ctx.stroke();
+        }
+      }
+      if (c === player && player.dodgeTime > 0) {
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.beginPath(); ctx.arc(0, 0, c.r + 4, 0, Math.PI*2); ctx.fill();
+      }
+
+      // status dots
+      if (c.bleed > 0) { ctx.fillStyle = '#c00'; ctx.beginPath(); ctx.arc(c.r*0.7, -c.r*0.5, 3,0,Math.PI*2); ctx.fill(); }
+      if (c.poison > 0) { ctx.fillStyle = '#0c0'; ctx.beginPath(); ctx.arc(c.r*0.7, c.r*0.5, 3,0,Math.PI*2); ctx.fill(); }
+      if (c.stun > 0) { ctx.fillStyle = '#88f'; ctx.beginPath(); ctx.arc(-c.r*0.7, -c.r*0.5, 3,0,Math.PI*2); ctx.fill(); }
+      if (c.fear > 0) { ctx.fillStyle = '#ff0'; ctx.beginPath(); ctx.arc(-c.r*0.7, c.r*0.5, 3,0,Math.PI*2); ctx.fill(); }
+      ctx.restore();
+    }
+
+    function draw() {
+      const b = BIOMES[biomeIndex];
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.save();
+      const camX = canvas.width/2 - player.x;
+      const camY = canvas.height/2 - player.y;
+      ctx.translate(camX, camY);
+
+      // world border
+      ctx.strokeStyle = b.border; ctx.lineWidth = 6;
+      ctx.strokeRect(0,0,W,H);
+      ctx.fillStyle = b.bg;
+      ctx.fillRect(0,0,W,H);
+
+      for (const o of objects) {
+        if (o.kind === 'exit') {
+          const ready = canMigrate();
+          const pulse = o.r + (ready ? Math.sin(worldTime * 6) * 5 : 0);
+          ctx.strokeStyle = ready ? o.color : '#666'; ctx.lineWidth = ready ? 4 : 2;
+          ctx.beginPath(); ctx.arc(o.x, o.y, pulse, 0, Math.PI*2); ctx.stroke();
+          ctx.fillStyle = ready ? 'rgba(255,255,255,0.15)' : 'rgba(100,100,100,0.15)';
+          ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI*2); ctx.fill();
+          continue;
+        }
+        ctx.fillStyle = o.color;
+        ctx.globalAlpha = o.kind === 'water' ? 0.6 : 1;
+        ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+        if (o.kind === 'tree') {
+          ctx.fillStyle = o.leaf;
+          ctx.beginPath(); ctx.arc(o.x, o.y - 6, o.r*0.9, 0, Math.PI*2); ctx.fill();
+        }
+      }
+      for (const f of foods) {
+        ctx.fillStyle = f.color;
+        ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
+        if (f.kind === 'carcass') { ctx.strokeStyle = '#3a2a1a'; ctx.lineWidth = 2; ctx.stroke(); }
+      }
+      for (const c of creatures) drawEntity(c);
+      drawEntity(player);
+
+      // charge / pounce visuals
+      if (player.charging) {
+        ctx.strokeStyle = 'rgba(255, 235, 59, 0.85)';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(player.x, player.y, player.r + 10 + player.charge * 45, 0, Math.PI*2); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,235,59,0.4)';
+        ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(player.x + Math.cos(player.chargeAim)*(player.r + 30 + player.charge*55), player.y + Math.sin(player.chargeAim)*(player.r + 30 + player.charge*55)); ctx.stroke();
+      }
+
+      // particles
+      for (const p of particles) {
+        ctx.globalAlpha = p.life / 0.4;
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // aim line
+      const a = Math.atan2(mouse.y - canvas.height/2, mouse.x - canvas.width/2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(player.x + Math.cos(a)*60, player.y + Math.sin(a)*60); ctx.stroke();
+
+      // night and event overlay
+      if (night) {
+        ctx.fillStyle = 'rgba(0,0,30,0.45)';
+        ctx.fillRect(0, 0, W, H);
+      }
+      if (event && event.name !== 'Wildfire') {
+        ctx.fillStyle = event.color;
+        ctx.fillRect(0, 0, W, H);
+      }
+      if (pendingEvent && pendingEvent.name === 'Wildfire') {
+        ctx.fillStyle = 'rgba(160,140,120,0.15)';
+        ctx.fillRect(0, 0, W, H);
+      }
+      if (event && event.name === 'Wildfire') {
+        const front = event.progress;
+        ctx.fillStyle = 'rgba(255,120,20,0.55)';
+        ctx.strokeStyle = '#ff6a00'; ctx.lineWidth = 6;
+        if (event.direction === 'left') { ctx.fillRect(0, 0, front, H); ctx.beginPath(); ctx.moveTo(front,0); ctx.lineTo(front,H); ctx.stroke(); }
+        if (event.direction === 'right') { ctx.fillRect(W-front, 0, front, H); ctx.beginPath(); ctx.moveTo(W-front,0); ctx.lineTo(W-front,H); ctx.stroke(); }
+        if (event.direction === 'top') { ctx.fillRect(0, 0, W, front); ctx.beginPath(); ctx.moveTo(0,front); ctx.lineTo(W,front); ctx.stroke(); }
+        if (event.direction === 'bottom') { ctx.fillRect(0, H-front, W, front); ctx.beginPath(); ctx.moveTo(0,H-front); ctx.lineTo(W,H-front); ctx.stroke(); }
+      }
+
+      ctx.restore();
+
+      // HUD
+      document.getElementById('hpBar').style.width = `${(player.hp/player.maxHp)*100}%`;
+      document.getElementById('enBar').style.width = `${(player.en/player.maxEn)*100}%`;
+      document.getElementById('hgBar').style.width = `${(player.hunger/player.maxHunger)*100}%`;
+      document.getElementById('epBar').style.width = `${Math.min(100,(player.ep/player.epNext)*100)}%`;
+      document.getElementById('epText').textContent = `${Math.floor(player.ep)} / ${player.epNext}`;
+      const act = player.active ? `${player.activeName} (${player.activeCooldown > 0 ? Math.ceil(player.activeCooldown*10)/10+'s' : 'ready'})` : 'none';
+      document.getElementById('activeLine').textContent = `Active: ${act}`;
+      const syn = player.synergies.size ? [...player.synergies].map(k => SYNERGIES[k].name).join(', ') : 'none';
+      document.getElementById('synergyLine').textContent = `Synergies: ${syn}`;
+      const day = Math.floor(dayTime / 60) + 1;
+      const phase = Math.floor(((dayTime % 60) / 60) * 100);
+      document.getElementById('dayLine').textContent = `Day ${day} · ${night ? 'NIGHT' : 'day'} (${phase}%)`;
+      if (event) document.getElementById('eventLine').textContent = `EVENT: ${event.name} (${Math.ceil(eventTimer)}s)`;
+      else if (pendingEvent) document.getElementById('eventLine').textContent = `Smoke on the horizon... (${Math.ceil(pendingTimer)}s)`;
+      else document.getElementById('eventLine').textContent = '';
+      updateBiomeHUD();
+    }
+
+    function loop(t) {
+      if (state !== 'playing') return;
+      const dt = Math.min((t - lastTime) / 1000, 0.05);
+      lastTime = t;
+      worldTime += dt;
+      dayTime += dt;
+      night = ((dayTime % 60) / 60) > 0.6;
+
+      updatePlayer(dt);
+      updateAI(dt);
+      updateParticles(dt);
+      updateEvent(dt);
+
+      for (let i = pendingSeeds.length - 1; i >= 0; i--) {
+        pendingSeeds[i].time -= dt;
+        if (pendingSeeds[i].time <= 0) {
+          foods.push(makeFood('berry', pendingSeeds[i].x, pendingSeeds[i].y));
+          pendingSeeds.splice(i, 1);
+        }
+      }
+
+      // respawn a berry occasionally (paused during Drought)
+      if (!(event && event.name === 'Drought') && Math.random() < 0.03 * dt) {
+        foods.push(makeFood('berry', rand(40,W-40), rand(40,H-40)));
+      }
+      const b = BIOMES[biomeIndex];
+      for (const type of ['prey','predator','apex']) {
+        const count = creatures.filter(c => c.type === type).length;
+        const target = b.spawn[type] * 0.6;
+        if (count < target && Math.random() < 0.05 * dt) {
+          creatures.push(makeCreature(type, rand(60,W-60), rand(60,H-60)));
+        }
+      }
+
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    buildLineageScreen();
+  </script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+name: Export Windows build
+
+# Runs on every push to main, and can also be triggered manually from the
+# Actions tab. Downloads Godot itself + matching export templates fresh
+# each run (rather than relying on a third-party image) so this stays in
+# sync with whatever GODOT_RELEASE_TAG says, matching project.godot's
+# declared engine version.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  GODOT_RELEASE_TAG: 4.3-stable
+  GODOT_TEMPLATE_VERSION: 4.3.stable
+  EXPORT_NAME: EVOLUTION
+
+jobs:
+  export-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Godot editor
+        run: |
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE_TAG}/Godot_v${GODOT_RELEASE_TAG}_linux.x86_64.zip" -O godot.zip
+          unzip -q godot.zip
+          chmod +x "Godot_v${GODOT_RELEASE_TAG}_linux.x86_64"
+          sudo mv "Godot_v${GODOT_RELEASE_TAG}_linux.x86_64" /usr/local/bin/godot
+
+      - name: Download export templates
+        run: |
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE_TAG}/Godot_v${GODOT_RELEASE_TAG}_export_templates.tpz" -O templates.tpz
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}"
+          unzip -q templates.tpz -d /tmp/templates
+          mv /tmp/templates/templates/* "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}/"
+
+      - name: Warm up the editor (builds the global class cache export needs)
+        run: |
+          cd godot
+          godot --headless --editor --quit || true
+
+      - name: Export Windows build
+        run: |
+          cd godot
+          mkdir -p builds/windows
+          godot --headless --export-release "Windows Desktop" builds/windows/${EXPORT_NAME}.exe
+
+      - name: Publish to the "latest" GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest build"
+          prerelease: true
+          make_latest: true
+          files: godot/builds/windows/${{ env.EXPORT_NAME }}.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
