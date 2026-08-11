@@ -51,11 +51,24 @@ func _maybe_run_cli_autopilot() -> void:
 			for e in OS.get_cmdline_user_args():
 				if e.begins_with("--forceevent="):
 					_force_event(e.split("=")[1])
+				elif e == "--forcemigrate":
+					_test_force_migrate()
+				elif e == "--forcemigrate_remote":
+					_test_force_migrate_remote()
 		elif arg.begins_with("--autojoin="):
+			# Supports both host:lineage (default port) and
+			# host:port:lineage, matching the interactive Join field's
+			# host:port parsing (needed for playit.gg-style tunnels) so
+			# tests can actually target a non-default port.
 			var parts := arg.split("=")[1].split(":")
-			_on_join_pressed(parts[0])
+			var lineage: String = parts[-1]
+			var address: String = ":".join(parts.slice(0, parts.size() - 1))
+			_on_join_pressed(address)
 			await _world_ready
-			_on_lineage_chosen(parts[1])
+			_on_lineage_chosen(lineage)
+			for e in OS.get_cmdline_user_args():
+				if e == "--forcemigrate":
+					_test_force_migrate()
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--debugprint":
 			var t := Timer.new()
@@ -67,6 +80,45 @@ func _maybe_run_cli_autopilot() -> void:
 			_auto_wander = true
 		elif arg == "--autoattack":
 			_auto_attack = true
+
+## Test-only: reproduce the reported "migrate button doesn't do anything"
+## bug report by directly forcing checklist-eligibility and then invoking
+## the exact same handler the button's pressed signal calls, so we're
+## testing the real code path, not a guess about it.
+func _test_force_migrate() -> void:
+	# Hosting: my_creature IS the server-authoritative object, so forcing
+	# fields locally is legitimate (same as _test_force_migrate_remote does
+	# for a joined client). Joined client: forcing local fields would only
+	# fool the client's own display, not the server's real copy - the
+	# actual test there is whether --forcemigrate_remote's server-side
+	# force correctly replicates down and the RPC path honors it.
+	await get_tree().create_timer(35.0).timeout
+	if my_creature and (NetworkManager.is_hosting or multiplayer.multiplayer_peer == null):
+		my_creature.apex_killed = true
+		my_creature.distance_traveled = 999999.0
+	if my_creature:
+		print("[test] pre-migrate can_migrate=%s hp=%s apex_killed=%s dist=%s" % [my_creature.can_migrate(), my_creature.stats.hp, my_creature.apex_killed, my_creature.distance_traveled])
+	await get_tree().create_timer(0.5).timeout
+	_on_migrate_pressed()
+	await get_tree().create_timer(1.0).timeout
+	print("[test] after migrate: gameover_visible=%s title=%s my_creature_null=%s" % [ui.gameover_panel.visible, ui.gameover_title.text if ui.gameover_panel.visible else "n/a", my_creature == null])
+
+## Test-only, run on the HOST: forces the *other* (joined) player's
+## server-authoritative checklist fields true, so the client-side migrate
+## test below is exercising real replication + the server-side
+## can_migrate() re-check in rpc_request_migrate, not just its own local
+## mirror (which a client can't actually make the server trust).
+func _test_force_migrate_remote() -> void:
+	await get_tree().create_timer(30.0).timeout
+	var found := false
+	for c in world.creatures_by_id.values():
+		if c.is_player and c != my_creature:
+			found = true
+			c.apex_killed = true
+			c.distance_traveled = 999999.0
+			print("[test] host forced remote entity=%d can_migrate=%s" % [c.entity_id, c.can_migrate()])
+	if not found:
+		print("[test] host found no remote player creature to force")
 
 ## Test-only: `--forceevent=predator_surge` skips the random wait and starts
 ## an event immediately, since the natural trigger chance is ~0.3%/sec (mean
@@ -98,7 +150,11 @@ func _debug_print_status() -> void:
 # ------------------------------------------------------------------
 
 func _on_host_pressed(biome_id: String = "forest") -> void:
-	var err := NetworkManager.host_game()
+	var port := NetworkManager.PORT
+	for e in OS.get_cmdline_user_args():
+		if e.begins_with("--port="):
+			port = int(e.split("=")[1])
+	var err := NetworkManager.host_game(port)
 	if err != OK:
 		ui.show_message("Failed to host (error %s)." % err)
 		return
@@ -149,6 +205,7 @@ func _spawn_world() -> void:
 	world.event_state_changed.connect(_on_event_state_changed)
 	world.local_player_ready.connect(_on_local_player_ready)
 	world.hud_refresh.connect(_on_hud_refresh)
+	world.migrate_rejected.connect(func(): ui.show_message("Can't migrate yet - checklist not actually met server-side."))
 	camera = Camera2D.new()
 	camera.zoom = Vector2(1.0, 1.0)
 	add_child(camera)

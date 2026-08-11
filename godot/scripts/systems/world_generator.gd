@@ -224,6 +224,14 @@ static func _cluster(rng: RandomNumberGenerator, center: Vector2, count: int, sp
 		pts.append(p)
 	return pts
 
+## Guaranteed exit corner (see generate()'s common tail) - anchors must
+## stay clear of this or a landmark cluster (e.g. a dense rock/tree
+## formation) can randomly bury the only way to actually win the run.
+## Real bug found from a user report of "migrate isn't working": nothing
+## previously kept structured generation's landmarks away from this spot.
+const _EXIT_CORNER := Vector2(WORLD_SIZE.x - 120.0, WORLD_SIZE.y - 120.0)
+const _EXIT_EXCLUSION_RADIUS := 260.0
+
 ## Anchor points with enough separation that clusters don't collide into
 ## one mush - each is a distinct "situation" on the map.
 static func _anchors(rng: RandomNumberGenerator, count: int, min_sep: float, margin: float = 220.0) -> Array:
@@ -233,6 +241,8 @@ static func _anchors(rng: RandomNumberGenerator, count: int, min_sep: float, mar
 		var best_score := -1.0
 		for _try in range(24):
 			var cand := Vector2(rng.randf_range(margin, WORLD_SIZE.x - margin), rng.randf_range(margin, WORLD_SIZE.y - margin))
+			if cand.distance_to(_EXIT_CORNER) < _EXIT_EXCLUSION_RADIUS:
+				continue
 			var min_d := INF
 			for p in pts:
 				min_d = minf(min_d, cand.distance_to(p))

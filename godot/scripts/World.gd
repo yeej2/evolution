@@ -7,6 +7,7 @@ extends Node2D
 ## whatever the authority broadcasts.
 
 signal mutation_draft_offered(choices: Array)
+signal migrate_rejected
 signal player_died(entity_id: int)
 signal event_state_changed(event_id: String, phase: String)
 signal hud_refresh
@@ -527,6 +528,16 @@ func rpc_request_migrate() -> void:
 	if c and c.can_migrate():
 		_log_telemetry(c, "migrated")
 		_announce_player_died(c.entity_id) # reuse the end-of-run screen with a win flag read from hp>0
+	elif c:
+		# Previously failed completely silently if the server ever disagreed
+		# with the client's own checklist display - nothing told the player
+		# why nothing happened. Rare now that landmark clusters can't bury
+		# the exit anymore, but still worth never failing silent.
+		rpc_migrate_rejected.rpc_id(c.owner_peer_id)
+
+@rpc("authority", "call_remote", "reliable")
+func rpc_migrate_rejected() -> void:
+	migrate_rejected.emit()
 
 @rpc("any_peer", "call_remote", "reliable")
 func rpc_request_reproduce(inherit_mutation_id: String) -> void:
