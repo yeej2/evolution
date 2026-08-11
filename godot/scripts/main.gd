@@ -296,6 +296,7 @@ func _physics_process(_delta: float) -> void:
 		_charging_pounce = false
 		_pounce_charge = 0.0
 	_space_was_down = space_down
+	ui.update_charge_bar(_charging_pounce, _pounce_charge)
 
 	if Input.is_action_just_pressed("eat"):
 		_send_eat()

@@ -284,6 +284,6 @@ func to_snapshot_core() -> Array:
 	return [entity_id, global_position.x, global_position.y, facing, stats.hp, stats.max_hp, flags, telegraph]
 
 ## Slow-changing player-only fields, broadcast at a much lower rate.
-## [id, mass, speed, mutations, generation, hunger, energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire]
+## [id, mass, speed, mutations, generation, hunger, energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown]
 func to_snapshot_extended() -> Array:
-	return [entity_id, stats.mass, stats.speed, mutation.owned.duplicate(), generation, hunger.hunger, hunger.energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire]
+	return [entity_id, stats.mass, stats.speed, mutation.owned.duplicate(), generation, hunger.hunger, hunger.energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown]

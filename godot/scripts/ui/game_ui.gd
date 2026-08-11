@@ -27,6 +27,7 @@ var draft_row: HBoxContainer
 var gameover_title: Label
 var gameover_stats: Label
 var gameover_repro_row: HBoxContainer
+var charge_bar: ProgressBar
 
 func _ready() -> void:
 	layer = 10
@@ -105,6 +106,15 @@ func show_event_banner(event_id: String, phase: String) -> void:
 	event_label.visible = true
 	get_tree().create_timer(4.0).timeout.connect(func(): event_label.visible = false)
 
+## Called every physics frame from main.gd while charging a hold attack -
+## previously there was zero feedback on how charged a lunge/charge/slam
+## was, which made the whole charge-for-a-bigger-hit mechanic feel like
+## guesswork across all three lineages.
+func update_charge_bar(charging: bool, charge: float) -> void:
+	charge_bar.visible = charging
+	if charging:
+		charge_bar.value = charge
+
 func update_hud(c: Creature, world: World) -> void:
 	hud_labels["stats"].text = "Gen %d  Mass %.1f  Speed %.0f" % [c.generation, c.stats.mass, c.stats.speed]
 	hud_labels["hp"].text = "HP: %d / %d" % [int(c.stats.hp), int(c.stats.max_hp)]
@@ -117,12 +127,46 @@ func update_hud(c: Creature, world: World) -> void:
 		parts.append("%s %s" % [item["label"], "OK" if item["done"] else "x"])
 	hud_labels["migration"].text = "Migrate via any one: %s" % " | ".join(parts)
 
+	if c.lineage_data and c.lineage_data.special_name != "":
+		var special_label: String = _SPECIAL_DISPLAY_NAMES.get(c.lineage_data.special_name, c.lineage_data.special_name)
+		hud_labels["special"].text = "Q - %s: %s" % [special_label, "Ready" if c.special_cooldown <= 0.0 else "%.1fs" % c.special_cooldown]
+		hud_labels["special"].visible = true
+	else:
+		hud_labels["special"].visible = false
+
+	hud_labels["hint"].text = _environment_hint(c, world)
+
 	near_exit = false
 	for o in world.objects_by_id.values():
 		if o.kind == "exit" and c.global_position.distance_to(o.global_position) < c.stats.radius + o.radius + 10.0:
 			near_exit = true
 			break
 	migrate_button.visible = near_exit and c.can_migrate()
+
+const _SPECIAL_DISPLAY_NAMES := {
+	"share_sustenance": "Share Sustenance",
+}
+
+## A nearby obstacle should tell you why it's stopping you (or how you're
+## bypassing it) instead of just being a silent wall - this is the whole
+## point of making mutations gate the environment, per PLAN.md: if nobody
+## notices the interaction exists, it might as well not.
+func _environment_hint(c: Creature, world: World) -> String:
+	var reach: float = c.stats.radius + 45.0
+	for o in world.objects_by_id.values():
+		if not o.is_solid():
+			continue
+		if c.global_position.distance_to(o.global_position) > reach + o.radius:
+			continue
+		if o.kind == "rock":
+			if c.mutation.has_flag(EffectKeys.BREAK_ROCKS):
+				return "This rock is breakable - bite it to clear a path (Strong Jaws)."
+			return "A rock blocks the way. Strong Jaws can bite through it, or go around."
+		if o.kind == "log":
+			if c.mutation.has_flag(EffectKeys.CLIMB_OVER_LOGS):
+				return "Climbing Claws lets you pass over this log freely."
+			return "A fallen log blocks the way. Climbing Claws lets you pass, or fire can burn it open."
+	return ""
 
 # ------------------------------------------------------------------
 # Building
@@ -134,6 +178,7 @@ func _hide_all() -> void:
 	hud_panel.visible = false
 	gameover_panel.visible = false
 	message_label.visible = false
+	charge_bar.visible = false
 
 func _panel(anchor_center: bool = true) -> PanelContainer:
 	var p := PanelContainer.new()
@@ -225,7 +270,7 @@ func _build_hud() -> void:
 
 	var v := VBoxContainer.new()
 	hud_panel.add_child(v)
-	var key_order := ["stats", "hp", "hunger", "mutations", "migration"]
+	var key_order := ["stats", "hp", "hunger", "mutations", "special", "migration"]
 	for key in key_order:
 		var lbl := Label.new()
 		lbl.text = ""
@@ -235,8 +280,31 @@ func _build_hud() -> void:
 		v.add_child(lbl)
 		hud_labels[key] = lbl
 	hud_labels["hp"].add_theme_color_override("font_color", Color(1.0, 0.55, 0.5))
+	hud_labels["special"].add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
+	hud_labels["special"].visible = false
 	hud_labels["migration"].add_theme_font_size_override("font_size", 13)
 	hud_labels["migration"].add_theme_color_override("font_color", Color(0.9, 0.8, 0.5))
+
+	# Always-on reminder of the controls - lineage-select text is the only
+	# other place any of this is written down, and that's a one-time screen
+	# seen before the run even starts.
+	var controls_label := Label.new()
+	controls_label.text = "WASD move | Shift sprint | Space tap=bite hold=charge special | E eat/interact | Q lineage special"
+	controls_label.add_theme_font_size_override("font_size", 12)
+	controls_label.add_theme_color_override("font_color", Color(0.75, 0.8, 0.75))
+	controls_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	v.add_child(controls_label)
+
+	# Contextual hint for whatever obstacle you're standing next to right
+	# now (see _environment_hint()) - blank/hidden when there's nothing to
+	# say, so it doesn't clutter the HUD the rest of the time.
+	var hint_lbl := Label.new()
+	hint_lbl.text = ""
+	hint_lbl.add_theme_font_size_override("font_size", 13)
+	hint_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.5))
+	hint_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	v.add_child(hint_lbl)
+	hud_labels["hint"] = hint_lbl
 
 	event_label = Label.new()
 	event_label.visible = false
@@ -248,6 +316,26 @@ func _build_hud() -> void:
 	event_label.add_theme_constant_override("outline_size", 4)
 	event_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	add_child(event_label)
+
+	charge_bar = ProgressBar.new()
+	charge_bar.min_value = 0.0
+	charge_bar.max_value = 1.0
+	charge_bar.step = 0.01
+	charge_bar.show_percentage = false
+	charge_bar.size = Vector2(240, 20)
+	charge_bar.custom_minimum_size = charge_bar.size
+	charge_bar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	charge_bar.position += Vector2(-charge_bar.size.x / 2.0, -70)
+	var charge_bg := StyleBoxFlat.new()
+	charge_bg.bg_color = Color(0.05, 0.05, 0.05, 0.7)
+	charge_bg.set_corner_radius_all(4)
+	charge_bar.add_theme_stylebox_override("background", charge_bg)
+	var charge_fill := StyleBoxFlat.new()
+	charge_fill.bg_color = Color(1.0, 0.75, 0.2)
+	charge_fill.set_corner_radius_all(4)
+	charge_bar.add_theme_stylebox_override("fill", charge_fill)
+	charge_bar.visible = false
+	add_child(charge_bar)
 
 	migrate_button = Button.new()
 	migrate_button.text = "Migrate (win the run)"

@@ -712,6 +712,7 @@ func rpc_snapshot(core: Array, extended: Array) -> void:
 		c.touched_water = entry[9]
 		c.survived_drought = entry[10]
 		c.survived_wildfire = entry[11]
+		c.special_cooldown = entry[12]
 	if not extended.is_empty():
 		hud_refresh.emit()
 

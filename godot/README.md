@@ -51,6 +51,13 @@ hold-to-charge-pounce/tap-to-bite, E eat/interact, Q lineage special
   general pattern going forward: a real obstacle with more than one honest
   way through it (route around it, or invest in the mutation that clears
   it), not a stat check.
+- **The HUD now actually surfaces the mechanics above.** A charge bar shows
+  while holding the attack (previously zero feedback on how charged a
+  lunge/charge/slam was); the special-ability line shows Q's name and
+  ready/cooldown state for lineages that have one; a contextual hint line
+  shows up when standing next to a rock or log, saying whether you can
+  break/climb it and how. A persistent one-line control reminder is always
+  visible too. See `game_ui.gd`'s `update_charge_bar()`/`_environment_hint()`.
 - **Events:** Drought, Wildfire, Predator Surge (extra hunters spawn in and
   every predator presses attacks harder/further for the duration).
 - **Migration checklist is per-biome** (`Creature.migration_checklist()`):
