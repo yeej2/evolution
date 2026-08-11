@@ -51,6 +51,8 @@ var wildfire_burned_objects: Dictionary = {}
 var event_data: Dictionary = {}
 var predator_surge_active: bool = false
 
+var projectiles_by_id: Dictionary = {} ## int -> Projectile
+var _next_projectile_id: int = 1
 var _next_food_id: int = 1000
 var _seen_initial_food_ids: Array = []
 var rng := RandomNumberGenerator.new()
@@ -150,6 +152,39 @@ func _spawn_object_local(id: int, kind: String, x: float, y: float, radius: floa
 	o.configure(id, kind, radius, color)
 	o.global_position = Vector2(x, y)
 	objects_by_id[id] = o
+
+## Spitter's projectile - see Projectile.gd for why this doesn't need
+## per-tick position sync like creatures do.
+func _broadcast_spawn_projectile(id: int, owner_id: int, kind: String, pos: Vector2, vel: Vector2, lifetime: float) -> void:
+	_spawn_projectile_local(id, owner_id, kind, pos, vel, lifetime)
+	if multiplayer.multiplayer_peer:
+		rpc_spawn_projectile.rpc(id, owner_id, kind, pos, vel, lifetime)
+
+@rpc("authority", "call_remote", "reliable")
+func rpc_spawn_projectile(id: int, owner_id: int, kind: String, pos: Vector2, vel: Vector2, lifetime: float) -> void:
+	_spawn_projectile_local(id, owner_id, kind, pos, vel, lifetime)
+
+func _spawn_projectile_local(id: int, owner_id: int, kind: String, pos: Vector2, vel: Vector2, lifetime: float) -> void:
+	var p := Projectile.new()
+	add_child(p)
+	p.configure(id, owner_id, kind, vel, lifetime)
+	p.global_position = pos
+	projectiles_by_id[id] = p
+
+func _despawn_projectile(id: int) -> void:
+	_apply_despawn_projectile(id)
+	if multiplayer.multiplayer_peer:
+		rpc_despawn_projectile.rpc(id)
+
+@rpc("authority", "call_remote", "reliable")
+func rpc_despawn_projectile(id: int) -> void:
+	_apply_despawn_projectile(id)
+
+func _apply_despawn_projectile(id: int) -> void:
+	var p: Projectile = projectiles_by_id.get(id, null)
+	if p and is_instance_valid(p):
+		p.queue_free()
+	projectiles_by_id.erase(id)
 
 func _spawn_food_local(id: int, kind: String, x: float, y: float, amount: float, radius: float, color: Color, cooked: bool, fresh_kill: bool, poisonous: bool) -> void:
 	var f := FoodItem.new()
@@ -342,6 +377,79 @@ func rpc_request_bite() -> void:
 	elif not _try_break_rock(c):
 		pass # bit at nothing - no cooldown waste beyond the normal one below
 	c.bite_cooldown = 0.4
+
+const PROJECTILE_SPEED := 360.0
+const PROJECTILE_LIFETIME := 1.4
+const PROJECTILE_DAMAGE := 9.0
+const PROJECTILE_POISON := 3.5
+
+## Spitter: fires while aiming (RMB held client-side, see main.gd) instead
+## of biting - shares bite_cooldown with melee since it's still "the
+## attack," just a different one. Any lineage that evolved Projectile
+## Gland gets this regardless of starting kit.
+@rpc("any_peer", "call_remote", "reliable")
+func rpc_request_fire() -> void:
+	if not _is_authority():
+		return
+	var c := _creature_for_sender()
+	if c == null or c.dead or c.bite_cooldown > 0.0 or not c.mutation.has_flag(EffectKeys.RANGED_ATTACK):
+		return
+	c.bite_cooldown = 0.5
+	var dir := Vector2.RIGHT.rotated(c.aim_angle)
+	var id := _next_projectile_id
+	_next_projectile_id += 1
+	_broadcast_spawn_projectile(id, c.entity_id, "venom_spit", c.global_position + dir * (c.stats.radius + 8.0), dir * PROJECTILE_SPEED, PROJECTILE_LIFETIME)
+
+const GRAB_RANGE := 42.0
+const GRAB_MASS_CAP_MULT := 1.5 ## can't grab something more than this much heavier than you
+const CRUSH_DAMAGE := 6.0
+const THROW_FORCE := 520.0
+const THROW_DAMAGE := 12.0
+
+## Crushing Grip (Behemoth): Space near an ungrabbed target grabs it; Space
+## again while already holding one crushes it. Grabbed = immobilized (see
+## _process_player_movement()/WildlifeAI's grabbed check) and dragged
+## along behind the grabber every tick (see _physics_process below) - the
+## "your body is the weapon" fantasy, not a stat.
+@rpc("any_peer", "call_remote", "reliable")
+func rpc_request_grab() -> void:
+	if not _is_authority():
+		return
+	var c := _creature_for_sender()
+	if c == null or c.dead or not c.mutation.has_flag(EffectKeys.GRAB_ATTACK):
+		return
+	if c.grab_target_id != -1:
+		var held := _find_creature(c.grab_target_id)
+		if held and not held.dead:
+			held.stats.hp -= CRUSH_DAMAGE
+			held.last_attacker_id = c.entity_id
+			held.last_hit_time = 4.0
+		return
+	var target := _nearest_bite_target(c, GRAB_RANGE)
+	if target and target.grabbed_by_id == -1 and target.stats.mass <= c.stats.mass * GRAB_MASS_CAP_MULT:
+		target.grabbed_by_id = c.entity_id
+		c.grab_target_id = target.entity_id
+
+## Throw: launches whatever you're holding in your aim direction - into
+## water, into a Wildfire front, into a rock, into another predator. The
+## environment becomes part of combat rather than just a backdrop for it.
+@rpc("any_peer", "call_remote", "reliable")
+func rpc_request_throw() -> void:
+	if not _is_authority():
+		return
+	var c := _creature_for_sender()
+	if c == null or c.grab_target_id == -1:
+		return
+	var target := _find_creature(c.grab_target_id)
+	c.grab_target_id = -1
+	if target == null:
+		return
+	target.grabbed_by_id = -1
+	var dir := Vector2.RIGHT.rotated(c.aim_angle)
+	target.knockback_impulse = dir * THROW_FORCE
+	target.stats.hp -= THROW_DAMAGE
+	target.last_attacker_id = c.entity_id
+	target.last_hit_time = 4.0
 
 ## Strong Jaws' whole point is a real, permanent way through an obstacle
 ## that isn't available to everyone - a rock only cracks under a bite from
@@ -834,12 +942,52 @@ func _physics_process(delta: float) -> void:
 		if not c.is_player and not c.dead:
 			WildlifeAI.process(c, self, delta)
 		_clamp_to_world(c)
+		if c.grab_target_id != -1:
+			var held := _find_creature(c.grab_target_id)
+			if held and not held.dead and not c.dead:
+				held.global_position = c.global_position + Vector2.RIGHT.rotated(c.facing) * (c.stats.radius + held.stats.radius + 4.0)
+			else:
+				if held:
+					held.grabbed_by_id = -1
+				c.grab_target_id = -1
 	if not _is_authority():
 		return
 	_tick_events(delta)
 	if current_event_id != "drought" and rng.randf() < BERRY_RESPAWN_CHANCE * delta:
 		_spawn_berry(rng.randf_range(40, WorldGenerator.WORLD_SIZE.x - 40), rng.randf_range(40, WorldGenerator.WORLD_SIZE.y - 40))
+	_tick_projectiles()
 	_broadcast_snapshot()
+
+## Server-only: projectiles move themselves every frame (see Projectile.gd,
+## identically on every peer from the same initial velocity - no per-tick
+## sync needed), so this only has to do the part clients can't: deciding
+## whether a hit landed.
+func _tick_projectiles() -> void:
+	for id in projectiles_by_id.keys().duplicate():
+		var p: Projectile = projectiles_by_id[id]
+		if not is_instance_valid(p):
+			projectiles_by_id.erase(id)
+			continue
+		var hit_something := false
+		for c in creatures_by_id.values():
+			if c.entity_id == p.owner_id or c.dead:
+				continue
+			if c.global_position.distance_to(p.global_position) < c.stats.radius + p.radius:
+				_resolve_projectile_hit(p.owner_id, c)
+				hit_something = true
+				break
+		if hit_something or p.global_position.x < 0.0 or p.global_position.x > WorldGenerator.WORLD_SIZE.x or p.global_position.y < 0.0 or p.global_position.y > WorldGenerator.WORLD_SIZE.y:
+			_despawn_projectile(id)
+
+func _resolve_projectile_hit(owner_id: int, target: Creature) -> void:
+	var attacker := _find_creature(owner_id)
+	if attacker == null:
+		return
+	target.stats.hp -= PROJECTILE_DAMAGE
+	target.last_attacker_id = owner_id
+	target.last_hit_time = 4.0
+	if not target.mutation.has_flag(EffectKeys.POISON_IMMUNE):
+		target.status.apply_poison(PROJECTILE_POISON, owner_id)
 
 const WORLD_MARGIN := 24.0
 
@@ -948,6 +1096,8 @@ func rpc_snapshot(core: Array, extended: Array) -> void:
 		c.ep_next = entry[14]
 		c.refuge_time = entry[15]
 		c.refuge_type = entry[16]
+		c.combo_count = entry[17]
+		c.grab_target_id = entry[18]
 	if not extended.is_empty():
 		hud_refresh.emit()
 

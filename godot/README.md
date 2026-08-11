@@ -15,7 +15,8 @@ Pick a biome next to **Host**, then have a second player **Join** at your
 LAN/localhost address (or `host:port` for a tunnel like playit.gg) and pick
 a lineage. Controls: WASD move, mouse aim, Shift sprint, Space
 hold-to-charge-pounce/tap-to-bite, E eat/interact, Q lineage special
-(currently only Grazer's Share Sustenance).
+(currently only Grazer's Share Sustenance). RMB changes meaning if you've
+evolved a combat archetype - see below.
 
 ## Content
 
@@ -150,6 +151,46 @@ hold-to-charge-pounce/tap-to-bite, E eat/interact, Q lineage special
   test PLAN.md records as a requirement - run a batch of same-lineage
   games across different Forest profiles and diff the mutation lists
   afterward instead of hand-tracking it.
+- **Great Horn has a real panic state machine**: Guard -> Threaten -> Charge
+  -> Pursue -> Search -> (back to Guard). Casually skirting its territory
+  gets a warning (it faces you, doesn't move); actually provoking it
+  (attacking it, or lingering too close) commits it to a charge that's
+  temporarily much faster than an unevolved player, and it'll smash
+  through logs/rocks directly in its path while pursuing. Losing it
+  doesn't mean you're instantly safe - it Searches the last place it saw
+  you for ~11s before giving up. See `wildlife_ai.gd`'s `_process_apex()`.
+- **Razorcat is a real pack hunter now.** Courage scales with nearby
+  packmates (a lone Razorcat won't engage a much bigger player; a pack of
+  five will), pack members spread around a shared target by index instead
+  of stacking on one approach line, and a wounded packmate under 40% HP
+  triggers nearby allies to converge on its attacker regardless of their
+  own normal detection range - "you wounded one, now three come back."
+  A Razorcat under 30% HP disengages toward its pack instead of fighting
+  on alone. See `SpeciesData.pack` / `wildlife_ai.gd`'s `_pack_mates()`.
+- **Three combat archetypes**, evolved independently of starting lineage -
+  any Stalker/Grazer/Titan can pick these up, and the mutation changes
+  what your mouse buttons actually do:
+  - **Spitter** (`venom_gland` -> `projectile_gland`): RMB aims, Space
+    fires a real projectile (`Projectile.gd`) that travels, poisons, and
+    despawns on hit - not a raycast, an actual simulated object every
+    peer sees move identically.
+  - **Ravager** (`rending_claws` -> `predatory_talons`): chaining bites
+    within 1.5s stacks up to +45% damage (x3), and hitting a target's
+    back (any target, not just wildlife with a rear-bonus stat) adds a
+    bleed stack. The "lunge" ask is just the existing pounce/charge
+    mechanic - no separate system needed.
+  - **Behemoth** (`grasping_claws` -> `crushing_grip`): Space grabs a
+    nearby target (mass-capped so you can't grab something way bigger),
+    Space again crushes it, RMB throws it in your aim direction with real
+    knockback + damage. A held target is dragged along behind you every
+    tick and is fully immobilized - can't act, can't be independently
+    targeted by anything else while held.
+  - **Honest scope note**: each archetype shipped with one real mutation
+    path (2 mutations: a base + the one that unlocks the actual mechanic),
+    not the full branching trees or hybrids described in the original
+    ask. The core fantasy and controls are real and complete; more
+    branches (Quill Volley, Great Scythe, Impale/Drag, hybrids like
+    Canopy Hunter) are a natural follow-up once these are playtested.
 - **Snapshot format changed again** (added `ep`/`ep_next`/`special_cooldown`
   replication) - as always, both host and joiners need to be on the same
   build or `rpc_snapshot` will throw an index-out-of-bounds trying to read
@@ -158,27 +199,27 @@ hold-to-charge-pounce/tap-to-bite, E eat/interact, Q lineage special
   request_* RPCs trusted the client more than they should have for
   anything beyond friendly co-op:
   - `rpc_request_eat` only found the *nearest* food in a 999-unit search
-    radius with no actual proximity check - a client could eat from
-    almost anywhere. Now validated against `radius + radius +
-    EAT_INTERACT_RANGE`.
+	radius with no actual proximity check - a client could eat from
+	almost anywhere. Now validated against `radius + radius +
+	EAT_INTERACT_RANGE`.
   - `rpc_choose_mutation` only rejected duplicate ids via
-    `MutationComponent.add()` - it never checked the id was one of the
-    three actually offered. The server now tracks `pending_mutation_
-    choices` per creature and only accepts an id from that exact set,
-    clearing it immediately after (success or not).
+	`MutationComponent.add()` - it never checked the id was one of the
+	three actually offered. The server now tracks `pending_mutation_
+	choices` per creature and only accepts an id from that exact set,
+	clearing it immediately after (success or not).
   - `rpc_request_reproduce` never checked `can_migrate()` or that the
-    parent actually owned the mutation it claimed to pass on. Both are
-    now validated. (Found while fixing this: reproduce was already
-    unreachable after a normal death, since the creature is despawned -
-    removed from `creatures_by_id` - before the reproduce screen even
-    appears, so it silently only ever worked after a migration win. This
-    contradicts PLAN.md's "death becomes reproduction" design and is a
-    separate, not-yet-fixed follow-up.)
+	parent actually owned the mutation it claimed to pass on. Both are
+	now validated. (Found while fixing this: reproduce was already
+	unreachable after a normal death, since the creature is despawned -
+	removed from `creatures_by_id` - before the reproduce screen even
+	appears, so it silently only ever worked after a migration win. This
+	contradicts PLAN.md's "death becomes reproduction" design and is a
+	separate, not-yet-fixed follow-up.)
   - `rpc_request_join` never checked that `lineage_id` was real.
   - Grazer's Share Sustenance capped its own cost at 100 hunger but still
-    gave the ally the full fixed benefit - a Grazer already near-starving
-    could pay almost nothing while still handing out the full amount. The
-    ally's benefit now scales with what was actually paid.
+	gave the ally the full fixed benefit - a Grazer already near-starving
+	could pay almost nothing while still handing out the full amount. The
+	ally's benefit now scales with what was actually paid.
 - **Object radius and food cook-state are now actually replicated.** Both
   were previously mutated only on the server's own copy with zero network
   sync at all - not just "already-connected clients don't see it," late

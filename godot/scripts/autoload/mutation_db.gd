@@ -239,6 +239,38 @@ func _build() -> void:
 		"No sense-range penalty at night", "None",
 		[], [], {EffectKeys.NIGHT_VISION: true})
 
+	# ---- Combat archetypes ----
+	# Three biological equivalents of familiar weapon fantasies - gun, sword,
+	# grappler - available to any lineage, independent of starting kit. The
+	# tier-2 mutation in each is what actually changes your controls (see
+	# main.gd's _unhandled_input), not just your numbers.
+	_def("venom_gland", "Venom Gland", "Offense", "spitter", 1,
+		"A gland swells with toxin - the precursor to something that can fire it.",
+		"Bite applies poison", "None",
+		[], [], {EffectKeys.POISON_ON_HIT: 2.0})
+	_def("projectile_gland", "Projectile Gland", "Offense", "spitter", 2,
+		"The gland grows a firing duct. You are now, functionally, a gun.",
+		"RMB aim, Space fire: spit venom at range, poisons on hit", "Melee bite damage -20%",
+		["venom_gland"], [], {EffectKeys.RANGED_ATTACK: true, EffectKeys.BITE_DAMAGE_ADD: -2.0})
+
+	_def("rending_claws", "Rending Claws", "Offense", "ravager", 1,
+		"Claws sharpen into something built for tearing, not just gripping.",
+		"Bite applies bleed", "None",
+		[], [], {EffectKeys.BLEED_ON_HIT: 3.0})
+	_def("predatory_talons", "Predatory Talons", "Offense", "ravager", 2,
+		"Talons lengthen further - consecutive hits chain into real combos.",
+		"Chained bites within 1.5s stack +15% damage (max x3); hitting from behind bonus bleed", "None",
+		["rending_claws"], [], {EffectKeys.COMBO_ATTACK: true})
+
+	_def("grasping_claws", "Grasping Claws", "Offense", "behemoth", 1,
+		"Claws widen into something built for holding on.",
+		"+50% knockback dealt", "None",
+		[], [], {EffectKeys.KNOCKBACK_MULT: 1.5})
+	_def("crushing_grip", "Crushing Grip", "Offense", "behemoth", 2,
+		"The grip becomes strong enough to actually hold something down.",
+		"Hold Space near a target to grab it, Space to crush, RMB to throw", "Can't bite while holding a grab",
+		["grasping_claws"], [], {EffectKeys.GRAB_ATTACK: true})
+
 	# ---- Diet trio (independent of family trees, mutually exclusive) ----
 	var diet_branch := ["diet_carnivore", "diet_herbivore", "diet_scavenger"]
 	_def("diet_carnivore", "Carnivore Gut", "Diet", "diet", 1,

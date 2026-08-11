@@ -147,7 +147,14 @@ func update_hud(c: Creature, world: World) -> void:
 	else:
 		hud_labels["special"].visible = false
 
-	hud_labels["hint"].text = _environment_hint(c, world)
+	if c.mutation.has_flag(EffectKeys.RANGED_ATTACK) and c.aiming:
+		hud_labels["hint"].text = "Aiming - Space to fire, release RMB to stop."
+	elif c.mutation.has_flag(EffectKeys.COMBO_ATTACK) and c.combo_count > 0:
+		hud_labels["hint"].text = "Combo x%d (+%d%% damage) - keep chaining bites within 1.5s." % [c.combo_count + 1, c.combo_count * 15]
+	elif c.mutation.has_flag(EffectKeys.GRAB_ATTACK) and c.grab_target_id != -1:
+		hud_labels["hint"].text = "Holding a grab - Space to crush, RMB to throw."
+	else:
+		hud_labels["hint"].text = _environment_hint(c, world)
 	var landmark := world.nearest_landmark_name(c.global_position)
 	hud_labels["location"].text = ("Near: %s" % landmark) if landmark != "" else ""
 
@@ -416,7 +423,7 @@ func _build_hud() -> void:
 	# other place any of this is written down, and that's a one-time screen
 	# seen before the run even starts.
 	var controls_label := Label.new()
-	controls_label.text = "WASD move | Shift sprint | Space tap=bite hold=charge special | E eat/interact | Q lineage special"
+	controls_label.text = "WASD move | Shift sprint | Space tap=bite hold=charge special | E eat/interact | Q lineage special | RMB aim (Spitter)"
 	controls_label.add_theme_font_size_override("font_size", 12)
 	controls_label.add_theme_color_override("font_color", Color(0.75, 0.8, 0.75))
 	controls_label.autowrap_mode = TextServer.AUTOWRAP_WORD

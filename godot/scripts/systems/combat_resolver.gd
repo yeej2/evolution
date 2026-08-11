@@ -41,19 +41,32 @@ static func resolve_bite(attacker: Creature, target: Creature, mult: float = 1.0
 	if target.mutation.has_flag(EffectKeys.POISON_REFLECT_IN_WATER) and target.in_water:
 		attacker.status.apply_poison(5.0, target.entity_id)
 
-	# --- Directional body geometry (species armor / retaliation) ---
+	# --- Directional body geometry (species armor/retaliation, and
+	# Predatory Talons' rear-attack bonus below) - computed unconditionally
+	# since target.facing exists for players too, not just wildlife.
+	var to_attacker := (attacker.global_position - target.global_position).normalized()
+	var facing_vec := Vector2.RIGHT.rotated(target.facing)
+	var dot := facing_vec.dot(to_attacker)
+	var attacking_from_rear := dot < -0.4
 	var retaliation_dmg := 0.0
 	if target.species_data:
-		var facing := target.facing
-		var to_attacker := (attacker.global_position - target.global_position).normalized()
-		var facing_vec := Vector2.RIGHT.rotated(facing)
-		var dot := facing_vec.dot(to_attacker)
 		if dot > 0.0 and target.species_data.frontal_armor > 0.0:
 			dmg *= (1.0 - target.species_data.frontal_armor)
 			if target.species_data.frontal_retaliation:
 				retaliation_dmg = 5.0
-		elif dot < -0.4 and target.species_data.rear_damage_bonus > 0.0:
+		elif attacking_from_rear and target.species_data.rear_damage_bonus > 0.0:
 			dmg *= (1.0 + target.species_data.rear_damage_bonus)
+
+	# Predatory Talons (Ravager): chaining bites within combo_timer's window
+	# stacks bonus damage, and catching something from behind - a player
+	# included, unlike the species-only check above - adds a bleed stack.
+	# Positioning and follow-through mattering for damage, not just stats.
+	if attacker.mutation.has_flag(EffectKeys.COMBO_ATTACK):
+		dmg *= 1.0 + minf(float(attacker.combo_count), 3.0) * 0.15
+		attacker.combo_count = mini(attacker.combo_count + 1, 3)
+		attacker.combo_timer = 1.5
+		if attacking_from_rear:
+			target.status.apply_bleed(4.0)
 
 	if target.mutation.has_flag(EffectKeys.REFLECT_DAMAGE_PCT):
 		retaliation_dmg += dmg * target.mutation.mult_value(EffectKeys.REFLECT_DAMAGE_PCT, 0.0)
@@ -66,6 +79,7 @@ static func resolve_bite(attacker: Creature, target: Creature, mult: float = 1.0
 
 	target.stats.hp -= dmg
 	target.last_attacker_id = attacker.entity_id
+	target.last_hit_time = 4.0 # apex provocation + pack alarm both read this ("was I just attacked")
 	if retaliation_dmg > 0.0:
 		attacker.stats.hp -= retaliation_dmg
 

@@ -359,11 +359,63 @@ text hints), and any further biome/mutation-family expansion - the
 project has enough content to run the divergent-evolution test now; the
 next thing to actually do is run it.
 
-### 9.8 Still not built
+### 9.8 Panic, packs, and combat archetypes — Built
+
+Feedback from an actual play session: the apex had a learnable fixed
+leash radius and wasn't especially fast, so it stopped being a monster
+and became a circle to route around; small predators posed no threat
+1-on-1 and had no reason to; and evolution changed numbers, never how
+combat actually felt to play.
+
+- **Great Horn panic FSM**: Guard -> Threaten -> Charge -> Pursue ->
+  Search -> Guard. Provoked (attacked, or lingered too close) commits it
+  to a temporarily-much-faster charge; it smashes logs/rocks directly in
+  its path while charging/pursuing (the payoff for every escape
+  interaction built in 9.6 - water/burrow/tree refuge, obstacles - is
+  that they're real, not just decoration); losing it starts an ~11s
+  Search around the last place it saw you rather than an instant "safe
+  now." See `wildlife_ai.gd`'s `_process_apex()`.
+- **Razorcat pack behavior**: courage (willingness to engage a
+  much-bigger player) scales with nearby packmates; pack members spread
+  around a shared target instead of stacking one approach line; a
+  packmate under 40% HP triggers others to converge on its attacker
+  regardless of their own detection range; a Razorcat under 30% HP
+  disengages toward its pack instead of dying alone. New `SpeciesData.
+  pack` flag, so this is reusable for future pack species, not
+  Razorcat-specific code.
+- **Three combat archetypes**, evolved independently of starting lineage
+  (any Stalker/Grazer/Titan can pick one up) - and each one changes what
+  the mouse buttons do, not just your numbers:
+  - **Spitter** (gun fantasy): `venom_gland` -> `projectile_gland`. RMB
+    aims, Space fires an actual simulated projectile (`Projectile.gd`)
+    that travels and poisons on hit.
+  - **Ravager** (sword fantasy): `rending_claws` -> `predatory_talons`.
+    Chained bites stack up to +45% damage; hitting any target's back adds
+    bleed. The "lunge" ask is just the existing pounce/charge mechanic.
+  - **Behemoth** (grappler fantasy - deliberately the "weird" third
+    option, not another weapon): `grasping_claws` -> `crushing_grip`.
+    Space grabs (mass-capped), Space again crushes, RMB throws with real
+    knockback + damage. Grabbed = fully immobilized and dragged along.
+
+**Explicitly scoped down from the original ask**, per its own stated
+priority order (fix these three systems before adding hybrids/more
+branches): each archetype has one real mutation path (2 mutations), not
+the full branching trees (Quill Volley, Great Scythe, Impale/Drag) or
+mutation hybrids (Canopy Hunter, Ambush Assassin, Juggernaut, River
+Spitter, Pouncing Blade). The core fantasy and controls are real and
+complete for all three; branches/hybrids are the natural next step once
+these are actually playtested - premature to build before knowing if the
+core three feel right.
+
+**Also explicitly deferred**: the standalone Ambush Predator enemy
+concept, and pack cutoff-escape-route roles (flanking-by-angle is built;
+"wait outside a burrow entrance" is not).
+
+### 9.9 Still not built
 
 A terrain feature (e.g. a ditch/chasm) only crossable with an aerial
 mutation ("wings"), with brute-force alternatives for everyone else
 (route around, or spend time knocking down a tree to bridge it). Bigger
-than everything in 9.6/9.7 - implies a new terrain kind and movement mode
-(flight), not just a new bypass rule on an existing solid object.
+than everything in 9.6/9.7/9.8 - implies a new terrain kind and movement
+mode (flight), not just a new bypass rule on an existing solid object.
 

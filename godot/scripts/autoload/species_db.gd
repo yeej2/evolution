@@ -46,6 +46,7 @@ func _def(id: String, name: String, creature_type: String, radius: float, hp: fl
 	s.nocturnal = flags.get("nocturnal", false)
 	s.scavenger = flags.get("scavenger", false)
 	s.bush_eater = flags.get("bush_eater", false)
+	s.pack = flags.get("pack", false)
 	by_id[id] = s
 
 func _build() -> void:
@@ -56,7 +57,7 @@ func _build() -> void:
 	_def("shellback", "Shellback", "prey", 17.0, 70.0, 65.0, 1.3, 0.0, 100.0, Color("7a9a6a"),
 		{"armor": 0.7})
 	_def("razorcat", "Razorcat", "predator", 13.0, 55.0, 115.0, 0.85, 10.0, 240.0, Color("a05050"),
-		{"nocturnal": true})
+		{"nocturnal": true, "pack": true})
 	_def("riverjaw", "Riverjaw", "predator", 15.0, 70.0, 90.0, 1.0, 12.0, 220.0, Color("4a7a9a"),
 		{"aquatic": true, "water_tether": true})
 	_def("carrion_beetle", "Carrion Beetle", "predator", 12.0, 40.0, 85.0, 0.6, 5.0, 260.0, Color("6a5a4a"),

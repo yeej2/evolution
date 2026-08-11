@@ -11,6 +11,7 @@ var camera: Camera2D = null
 var _charging_pounce := false
 var _pounce_charge := 0.0
 var _space_was_down := false
+var _rmb_was_down := false
 
 var _spectating := false
 var _spectate_cam_pos := Vector2.ZERO
@@ -55,6 +56,12 @@ func _maybe_run_cli_autopilot() -> void:
 					_test_force_migrate()
 				elif e == "--forcemigrate_remote":
 					_test_force_migrate_remote()
+				elif e == "--testspit":
+					_test_spit()
+				elif e == "--testcombo":
+					_test_combo()
+				elif e == "--testgrab":
+					_test_grab()
 		elif arg.begins_with("--autojoin="):
 			# Supports both host:lineage (default port) and
 			# host:port:lineage, matching the interactive Join field's
@@ -119,6 +126,98 @@ func _test_force_migrate_remote() -> void:
 			print("[test] host forced remote entity=%d can_migrate=%s" % [c.entity_id, c.can_migrate()])
 	if not found:
 		print("[test] host found no remote player creature to force")
+
+## Test-only: verify Spitter's full path (mutation grant -> fire -> real
+## projectile -> hit detection -> poison/damage) without needing a human
+## to draft the mutation and aim a mouse.
+func _test_spit() -> void:
+	await get_tree().create_timer(2.0).timeout
+	if my_creature == null:
+		return
+	my_creature.add_mutation("venom_gland")
+	my_creature.add_mutation("projectile_gland")
+	# Aim directly at the nearest wildlife creature so a hit is
+	# deterministic to verify, not left to chance.
+	var target: Creature = null
+	var best := INF
+	for c in world.creatures_by_id.values():
+		if c == my_creature or c.is_player:
+			continue
+		var d: float = my_creature.global_position.distance_to(c.global_position)
+		if d < best:
+			best = d
+			target = c
+	if target:
+		my_creature.aim_angle = my_creature.global_position.direction_to(target.global_position).angle()
+		print("[test] target=%s hp_before=%.1f dist=%.1f" % [target.species_id, target.stats.hp, best])
+	print("[test] spitter mutations=%s ranged=%s" % [my_creature.mutation.owned, my_creature.mutation.has_flag(EffectKeys.RANGED_ATTACK)])
+	_send_fire()
+	await get_tree().create_timer(1.5).timeout
+	print("[test] projectiles_by_id after fire+settle: %s" % [world.projectiles_by_id.keys()])
+	if target and is_instance_valid(target):
+		print("[test] target hp_after=%.1f poisoned=%s" % [target.stats.hp, target.status.poison_time > 0.0])
+
+## Test-only: verify Predatory Talons' combo stacking by biting the same
+## nearby target three times in a row and confirming increasing damage.
+func _test_combo() -> void:
+	await get_tree().create_timer(2.0).timeout
+	if my_creature == null:
+		return
+	my_creature.add_mutation("rending_claws")
+	my_creature.add_mutation("predatory_talons")
+	var target: Creature = null
+	var best := INF
+	for c in world.creatures_by_id.values():
+		if c == my_creature or c.is_player:
+			continue
+		var d: float = my_creature.global_position.distance_to(c.global_position)
+		if d < best:
+			best = d
+			target = c
+	if target == null:
+		print("[test] no target found for combo test")
+		return
+	my_creature.global_position = target.global_position - Vector2(target.stats.radius + my_creature.stats.radius, 0)
+	print("[test] combo target=%s hp_before=%.1f" % [target.species_id, target.stats.hp])
+	for i in range(3):
+		world.server_resolve_bite(my_creature, target)
+		print("[test] hit %d: combo_count=%d target_hp=%.1f" % [i, my_creature.combo_count, target.stats.hp])
+		await get_tree().create_timer(0.3).timeout
+
+## Test-only: verify Crushing Grip's full path - grab, crush (damage over
+## repeated calls), drag (position follows grabber), and throw (knockback
+## + damage + release).
+func _test_grab() -> void:
+	await get_tree().create_timer(2.0).timeout
+	if my_creature == null:
+		return
+	my_creature.add_mutation("grasping_claws")
+	my_creature.add_mutation("crushing_grip")
+	var target: Creature = null
+	var best := INF
+	for c in world.creatures_by_id.values():
+		if c == my_creature or c.is_player:
+			continue
+		var d: float = my_creature.global_position.distance_to(c.global_position)
+		if d < best:
+			best = d
+			target = c
+	if target == null:
+		print("[test] no target found for grab test")
+		return
+	my_creature.global_position = target.global_position - Vector2(target.stats.radius + my_creature.stats.radius - 5.0, 0)
+	print("[test] grab target=%s hp_before=%.1f" % [target.species_id, target.stats.hp])
+	_send_grab()
+	await get_tree().create_timer(0.3).timeout
+	print("[test] after grab: grab_target_id=%d target.grabbed_by_id=%d" % [my_creature.grab_target_id, target.grabbed_by_id])
+	_send_grab() # crush
+	await get_tree().create_timer(0.3).timeout
+	print("[test] after crush: target_hp=%.1f" % target.stats.hp)
+	my_creature.aim_angle = 0.0
+	var pos_before := target.global_position
+	_send_throw()
+	await get_tree().create_timer(0.5).timeout
+	print("[test] after throw: target_hp=%.1f moved=%.1f grab_target_id=%d target.grabbed_by_id=%d" % [target.stats.hp, pos_before.distance_to(target.global_position), my_creature.grab_target_id, target.grabbed_by_id])
 
 ## Test-only: `--forceevent=predator_surge` skips the random wait and starts
 ## an event immediately, since the natural trigger chance is ~0.3%/sec (mean
@@ -342,23 +441,47 @@ func _physics_process(_delta: float) -> void:
 	if _auto_attack and int(Engine.get_physics_frames()) % 20 == 0:
 		_send_bite()
 
+	# Biology changes what the mouse buttons do: Projectile Gland (Spitter)
+	# swaps Space from bite/charge to "fire while aiming" the moment RMB is
+	# held; Crushing Grip (Behemoth) swaps Space into grab/crush and RMB
+	# into throw. Neither touches Space's normal meaning for anyone who
+	# hasn't evolved that mutation, regardless of starting lineage.
+	var has_ranged: bool = my_creature.mutation.has_flag(EffectKeys.RANGED_ATTACK)
+	var has_grab: bool = my_creature.mutation.has_flag(EffectKeys.GRAB_ATTACK)
+	my_creature.aiming = has_ranged and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+
 	var space_down := Input.is_action_pressed("bite_pounce")
-	if space_down and not _space_was_down:
-		_charging_pounce = true
-		_pounce_charge = 0.0
-	if space_down and _charging_pounce:
-		_pounce_charge = clampf(_pounce_charge + _delta_charge(), 0.0, 1.0)
-	if not space_down and _space_was_down:
-		# A human "tap" routinely holds a key for 80-150ms, so the commit
-		# threshold has to be well above that or every bite attempt turns
-		# into an unintended (and unresolved-looking) pounce.
-		if _charging_pounce and _pounce_charge > 0.2:
-			_send_pounce(_pounce_charge)
-		else:
-			_send_bite()
+	var rmb_down := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	if has_grab:
+		if space_down and not _space_was_down:
+			_send_grab()
+		if rmb_down and not _rmb_was_down and my_creature.grab_target_id != -1:
+			_send_throw()
 		_charging_pounce = false
 		_pounce_charge = 0.0
+	elif has_ranged and my_creature.aiming:
+		if space_down and not _space_was_down:
+			_send_fire()
+		_charging_pounce = false
+		_pounce_charge = 0.0
+	else:
+		if space_down and not _space_was_down:
+			_charging_pounce = true
+			_pounce_charge = 0.0
+		if space_down and _charging_pounce:
+			_pounce_charge = clampf(_pounce_charge + _delta_charge(), 0.0, 1.0)
+		if not space_down and _space_was_down:
+			# A human "tap" routinely holds a key for 80-150ms, so the commit
+			# threshold has to be well above that or every bite attempt turns
+			# into an unintended (and unresolved-looking) pounce.
+			if _charging_pounce and _pounce_charge > 0.2:
+				_send_pounce(_pounce_charge)
+			else:
+				_send_bite()
+			_charging_pounce = false
+			_pounce_charge = 0.0
 	_space_was_down = space_down
+	_rmb_was_down = rmb_down
 	ui.update_charge_bar(_charging_pounce, _pounce_charge)
 
 	if Input.is_action_just_pressed("eat"):
@@ -399,3 +522,21 @@ func _send_special() -> void:
 		world.rpc_request_special()
 	else:
 		world.rpc_request_special.rpc_id(1)
+
+func _send_fire() -> void:
+	if NetworkManager.is_hosting or multiplayer.multiplayer_peer == null:
+		world.rpc_request_fire()
+	else:
+		world.rpc_request_fire.rpc_id(1)
+
+func _send_grab() -> void:
+	if NetworkManager.is_hosting or multiplayer.multiplayer_peer == null:
+		world.rpc_request_grab()
+	else:
+		world.rpc_request_grab.rpc_id(1)
+
+func _send_throw() -> void:
+	if NetworkManager.is_hosting or multiplayer.multiplayer_peer == null:
+		world.rpc_request_throw()
+	else:
+		world.rpc_request_throw.rpc_id(1)

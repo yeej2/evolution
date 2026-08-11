@@ -59,3 +59,11 @@ const COOKED_CARCASS_RESTORE_MULT := "cooked_carcass_restore_mult"
 
 # Fire / environment resistance
 const FIRE_IMMUNE := "fire_immune"
+
+# Combat archetypes (World.gd/main.gd) - these gate entirely different
+# control schemes, not stat tweaks. Evolving into one changes what your
+# mouse buttons actually do; see main.gd's _unhandled_input and
+# World.gd's rpc_request_fire/rpc_request_grab/rpc_request_throw.
+const RANGED_ATTACK := "ranged_attack" ## Spitter: RMB aim, fire a projectile
+const COMBO_ATTACK := "combo_attack" ## Ravager: chaining bites within COMBO_WINDOW stacks bonus damage
+const GRAB_ATTACK := "grab_attack" ## Behemoth: hold Space near a target to grab, Space to crush, RMB to throw

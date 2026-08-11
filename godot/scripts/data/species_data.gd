@@ -27,6 +27,7 @@ extends Resource
 @export var nocturnal: bool = false
 @export var scavenger: bool = false
 @export var bush_eater: bool = false
+@export var pack: bool = false ## courage scales with nearby same-species allies - see wildlife_ai.gd
 
 func _to_string() -> String:
 	return "Species(%s)" % id

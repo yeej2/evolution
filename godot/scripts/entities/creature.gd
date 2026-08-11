@@ -36,6 +36,12 @@ var flurry_hit_timer: float = 0.0 ## style=="flurry" only - see World._check_flu
 
 var bite_cooldown: float = 0.0
 var special_cooldown: float = 0.0 ## Q ("dodge" input) - lineage special, e.g. Grazer's Share Sustenance
+var last_hit_time: float = 0.0 ## seconds since last taking damage - apex provocation, pack alarm
+var combo_count: int = 0 ## Ravager: consecutive chained bites
+var combo_timer: float = 0.0
+var grabbed_by_id: int = -1 ## Behemoth target-side: entity_id of whoever is holding me (immobilized)
+var grab_target_id: int = -1 ## Behemoth attacker-side: entity_id of who I'm holding
+var aiming: bool = false ## Spitter: RMB held
 
 # Refuge ("escape interactions" - climb a tree, burrow, take shelter): a
 # temporary, immobile, imperceptible-to-wildlife state. See World.gd's
@@ -158,6 +164,12 @@ func process_server_tick(delta: float) -> void:
 		bite_cooldown -= delta
 	if special_cooldown > 0.0:
 		special_cooldown -= delta
+	if last_hit_time > 0.0:
+		last_hit_time -= delta
+	if combo_timer > 0.0:
+		combo_timer -= delta
+		if combo_timer <= 0.0:
+			combo_count = 0
 	if refuge_time > 0.0:
 		refuge_time -= delta
 		if refuge_time <= 0.0:
@@ -195,6 +207,12 @@ func hidden_check(delta: float) -> bool:
 var _move_vel: Vector2 = Vector2.ZERO ## smoothed toward the desired velocity by lineage handling
 
 func _process_player_movement(delta: float) -> void:
+	if grabbed_by_id != -1:
+		# Position is driven directly by the grabber each tick (World.gd) -
+		# don't fight it with normal movement/knockback.
+		_move_vel = Vector2.ZERO
+		velocity = Vector2.ZERO
+		return
 	if refuge_time > 0.0:
 		_move_vel = Vector2.ZERO
 		velocity = knockback_impulse # sheltered, but a hit that connects anyway should still shove you
@@ -320,6 +338,6 @@ func to_snapshot_core() -> Array:
 	return [entity_id, global_position.x, global_position.y, facing, stats.hp, stats.max_hp, flags, telegraph]
 
 ## Slow-changing player-only fields, broadcast at a much lower rate.
-## [id, mass, speed, mutations, generation, hunger, energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next, refuge_time, refuge_type]
+## [id, mass, speed, mutations, generation, hunger, energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next, refuge_time, refuge_type, combo_count, grab_target_id]
 func to_snapshot_extended() -> Array:
-	return [entity_id, stats.mass, stats.speed, mutation.owned.duplicate(), generation, hunger.hunger, hunger.energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next, refuge_time, refuge_type]
+	return [entity_id, stats.mass, stats.speed, mutation.owned.duplicate(), generation, hunger.hunger, hunger.energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next, refuge_time, refuge_type, combo_count, grab_target_id]
