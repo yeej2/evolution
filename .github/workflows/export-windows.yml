@@ -10,6 +10,12 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+# The default GITHUB_TOKEN is read-only unless a workflow explicitly asks
+# for write access - needed here so softprops/action-gh-release can create/
+# update the "latest" release.
+permissions:
+  contents: write
+
 env:
   GODOT_RELEASE_TAG: 4.3-stable
   GODOT_TEMPLATE_VERSION: 4.3.stable
