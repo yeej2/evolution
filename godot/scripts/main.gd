@@ -273,6 +273,12 @@ func _physics_process(_delta: float) -> void:
 		my_creature.aim_angle = aim
 		my_creature.sprint_held = sprint
 		my_creature._process_player_movement(_delta)
+		# The server clamps every creature to WORLD_SIZE in its own tick,
+		# but that's a no-op for a non-host client's *own* creature - it's
+		# predicted locally here specifically so server corrections don't
+		# overwrite it, so nothing was ever pulling it back once it walked
+		# past the edge. Same clamp, applied locally too.
+		world._clamp_to_world(my_creature)
 
 	if _auto_wander and int(Engine.get_physics_frames()) % 30 == 0:
 		_send_eat()

@@ -39,6 +39,18 @@ static func _nearest(c: Creature, list: Array, max_range: float) -> Node:
 			best = o
 	return best
 
+static func _nearest_burrow_object(c: Creature, world: Node, max_range: float) -> WorldObject:
+	var best: WorldObject = null
+	var best_d := max_range
+	for o in world.objects_by_id.values():
+		if o.kind != "burrow":
+			continue
+		var d: float = c.global_position.distance_to(o.global_position)
+		if d < best_d:
+			best_d = d
+			best = o
+	return best
+
 static func _nearest_water(c: Creature, world: Node) -> WorldObject:
 	var best: WorldObject = null
 	var best_d := INF
@@ -67,6 +79,11 @@ static func _process_prey(c: Creature, world: Node, delta: float) -> void:
 
 	if nearest_player and (dplayer < 150.0 or c.status.fear_time > 0.0):
 		var away := (c.global_position - nearest_player.global_position).normalized()
+		# Fleeing toward an actual burrow beats fleeing directly away from
+		# nothing in particular - a real destination, not just "not here."
+		var cover := _nearest_burrow_object(c, world, 260.0)
+		if cover:
+			away = (away * 0.5 + (cover.global_position - c.global_position).normalized() * 0.5).normalized()
 		c.velocity = away * sp
 		return
 
@@ -196,6 +213,14 @@ static func _process_predator(c: Creature, world: Node, delta: float) -> void:
 
 	c.velocity = _wander_dir(c, delta, world) * sp * 0.35
 
+static func _wildfire_flee_dir(world: Node) -> Vector2:
+	match world.wildfire_direction:
+		"left": return Vector2.RIGHT
+		"right": return Vector2.LEFT
+		"top": return Vector2.DOWN
+		"bottom": return Vector2.UP
+	return Vector2.ZERO
+
 static func _resolve_telegraphed_attack(c: Creature, world: Node) -> void:
 	var t: Creature = c.attack_target
 	c.attack_target = null
@@ -220,6 +245,16 @@ static func _process_apex(c: Creature, world: Node, delta: float) -> void:
 			_resolve_telegraphed_attack(c, world)
 		c.velocity = Vector2.ZERO
 		return
+
+	# A territory is only worth defending if the territory isn't currently
+	# on fire - needs-based movement in miniature: the apex's top priority
+	# flips from "hold ground" to "get away from the fire front" without
+	# any Wildfire-specific code in this function at all.
+	if world.current_event_id == "wildfire":
+		var away_from_fire := _wildfire_flee_dir(world)
+		if away_from_fire != Vector2.ZERO:
+			c.velocity = away_from_fire * c.stats.speed * 1.2
+			return
 
 	var home: Vector2 = c.get_meta("home_position", c.global_position)
 	var d_home := c.global_position.distance_to(home)

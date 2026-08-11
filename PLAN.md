@@ -319,11 +319,51 @@ world made different traits valuable? Or do players converge on the same
 the environment doesn't matter enough yet, and that's the next thing to
 fix - not "add more content."
 
-### 9.7 Still not built
+### 9.7 Generation depth pass — Built
+
+A follow-up code review of 9.6 correctly identified the real bottleneck:
+the four Forest profiles were still "different ingredient ratios inside
+the same procedural soup" - different counts of independently-scattered
+objects, not actual situations. Four things fixed:
+
+1. **Structured generation, not scattering.** Each Forest archetype now
+   builds named landmarks that cluster a resource kind's whole spawn
+   budget around an anchor (`WorldGenerator._gen_dry_forest()` /
+   `_gen_flooded_forest()` / `_gen_ancient_forest()` / `_gen_lush_forest()`).
+   Flooded Forest specifically builds a literal connected river (a chain
+   of overlapping water circles) with a deliberate Fallen Giant bridge and
+   an Island Nest reward - the exact "generate situations" example from
+   the review, not five independent ponds.
+2. **Need-driven movement, two more concrete cases** on top of 9.6's
+   hotspot wander-bias: apex abandons territory and flees during
+   Wildfire; fleeing prey bias toward a nearby Burrow instead of running
+   directly away from nothing in particular.
+3. **Terrain-dependent digging.** Soil is derived from what's already
+   there (unbroken rocks = rocky ground = no burrowing; Ancient Forest's
+   Dense Canopy Zone = root-dense) rather than Digging Claws working
+   everywhere unconditionally, which had made the ground stop mattering
+   for anyone who took it.
+4. **World-state telemetry** (`user://telemetry.jsonl`) - biome, seed,
+   lineage, final mutation list, nearest landmark, per run. This is the
+   actual instrument for 9.6's divergent-evolution test, not just a
+   description of it.
+
+Also fixed along the way: a real bug, not a design gap - `WORLD_SIZE` had
+never actually been enforced as a movement boundary, only a spawn
+boundary. Both wildlife and players could walk straight out of the map.
+Now hard-clamped, server- and client-side.
+
+**Explicitly deferred, per the review's own prioritization:** visual
+sensory presentation (scent wisps, directional audio cues instead of
+text hints), and any further biome/mutation-family expansion - the
+project has enough content to run the divergent-evolution test now; the
+next thing to actually do is run it.
+
+### 9.8 Still not built
 
 A terrain feature (e.g. a ditch/chasm) only crossable with an aerial
 mutation ("wings"), with brute-force alternatives for everyone else
 (route around, or spend time knocking down a tree to bridge it). Bigger
-than everything in 9.6 - implies a new terrain kind and movement mode
+than everything in 9.6/9.7 - implies a new terrain kind and movement mode
 (flight), not just a new bypass rule on an existing solid object.
 

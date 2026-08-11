@@ -101,6 +101,55 @@ hold-to-charge-pounce/tap-to-bite, E eat/interact, Q lineage special
   same "optimal" picks regardless of world?** If the latter, the
   environment isn't mattering enough yet and that's a real signal, not a
   content gap to paper over with more biomes.
+- **Real bug fix: world bounds were never actually enforced.** `WORLD_SIZE`
+  only ever controlled where things *spawned* - nothing clamped where a
+  creature could actually go, so both wildlife and players could walk
+  straight out of the 1600x1200 world (confirmed via a debug log showing
+  x positions in the thousands). Now hard-clamped every tick, both
+  server-side (`World._clamp_to_world()`, all creatures) and client-side
+  (a joined client's *own* creature is locally predicted specifically so
+  server corrections don't fight it - same clamp had to be applied there
+  too, or it could walk past the edge with nothing ever pulling it back).
+  A real edge treatment (dense forest/cliffs/water explaining the
+  boundary visually, instead of an invisible wall) is a follow-up.
+- **Structured world generation ("generate situations, not objects") for
+  the four Forest archetypes.** These used to just be different ratios of
+  independently-scattered objects. Now each has named landmarks that
+  cluster a resource kind's *entire* spawn budget around an anchor point
+  instead of scattering it map-wide - Dry Forest's Rocky Pass, Ancient
+  Forest's Dense Canopy Zone, Lush Forest's Berry Groves, etc. Flooded
+  Forest is the flagship case: `WorldGenerator._gen_flooded_forest()`
+  builds an actual connected river (a chain of overlapping water circles
+  in a wandering line across the map, not independent ponds) with one
+  deliberately-placed Fallen Giant log bridging it and an Island Nest as
+  the reward for crossing. Landmarks aren't labeled on-screen by design
+  (see PLAN.md 9.6) except one exception: the HUD shows "Near: <name>"
+  when you're inside one, and it's recorded in telemetry (below) - the
+  idea is for players to nickname them ("meet at the Fallen Giant"), not
+  for the UI to.
+- **Terrain-dependent digging.** Digging Claws letting you burrow
+  literally anywhere made the ground stop mattering. Soil is derived from
+  what's already there rather than a separate authored system: standing
+  within ~55 units of an *unbroken* rock is "rocky" ground and blocks
+  burrowing (break the rock with Strong Jaws and the rubble becomes
+  diggable - an emergent interaction between two mutations, not something
+  deliberately paired); Ancient Forest's Dense Canopy Zone is marked
+  "root_dense" and blocks digging entirely, forcing routing through it on
+  the surface or via the separate Cave Mouth (Burrow object, which is
+  already-dug and works regardless of soil). See `World._soil_at()`.
+- **Need-driven movement, two concrete additions** (on top of the
+  hotspot/water-bias wander from the previous pass): a territorial apex
+  now abandons its territory and flees during Wildfire instead of holding
+  ground and cooking; fleeing prey bias their escape toward a nearby
+  Burrow object instead of just running directly away from the threat
+  with no destination in mind.
+- **World-state telemetry.** Every death/migration/reproduction now
+  appends a JSON line to `user://telemetry.jsonl` (biome, seed, lineage,
+  final mutation list, generation, mass, distance traveled, nearest
+  landmark). This is the actual measurement for the divergent-evolution
+  test PLAN.md records as a requirement - run a batch of same-lineage
+  games across different Forest profiles and diff the mutation lists
+  afterward instead of hand-tracking it.
 - **Snapshot format changed again** (added `ep`/`ep_next`/`special_cooldown`
   replication) - as always, both host and joiners need to be on the same
   build or `rpc_snapshot` will throw an index-out-of-bounds trying to read

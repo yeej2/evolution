@@ -148,6 +148,8 @@ func update_hud(c: Creature, world: World) -> void:
 		hud_labels["special"].visible = false
 
 	hud_labels["hint"].text = _environment_hint(c, world)
+	var landmark := world.nearest_landmark_name(c.global_position)
+	hud_labels["location"].text = ("Near: %s" % landmark) if landmark != "" else ""
 
 	near_exit = false
 	for o in world.objects_by_id.values():
@@ -168,6 +170,12 @@ const _SPECIAL_DISPLAY_NAMES := {
 func _environment_hint(c: Creature, world: World) -> String:
 	if c.refuge_time > 0.0:
 		return "Sheltered (%s) - press E to come out early. %.0fs left." % [c.refuge_type, c.refuge_time]
+	if c.mutation.has_flag(EffectKeys.BURROW):
+		var soil := world._soil_at(c.global_position)
+		if soil == "rocky":
+			return "Ground's too rocky to dig here - Strong Jaws can rubble a nearby rock first."
+		elif soil == "root_dense":
+			return "Roots are too dense to burrow through here."
 	var reach: float = c.stats.radius + 45.0
 	for o in world.objects_by_id.values():
 		if not o.is_solid():
@@ -357,7 +365,7 @@ func _build_hud() -> void:
 
 	var v := VBoxContainer.new()
 	hud_panel.add_child(v)
-	var key_order := ["stats", "hp", "hunger", "mutations", "special"]
+	var key_order := ["location", "stats", "hp", "hunger", "mutations", "special"]
 	for key in key_order:
 		var lbl := Label.new()
 		lbl.text = ""
@@ -369,6 +377,8 @@ func _build_hud() -> void:
 	hud_labels["hp"].add_theme_color_override("font_color", Color(1.0, 0.55, 0.5))
 	hud_labels["special"].add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
 	hud_labels["special"].visible = false
+	hud_labels["location"].add_theme_font_size_override("font_size", 13)
+	hud_labels["location"].add_theme_color_override("font_color", Color(0.75, 0.85, 1.0))
 
 	# Evolution progress (EP toward the next mutation draft) - previously
 	# had zero visibility at all; you'd just be surprised by a draft screen.

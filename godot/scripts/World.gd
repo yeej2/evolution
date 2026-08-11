@@ -24,6 +24,18 @@ var peer_to_entity: Dictionary = {} ## int peer_id -> int entity_id
 
 var world_seed: int = 0
 var biome_id: String = "forest"
+var root_dense_zones: Array = [] ## Array of {center: Vector2, radius: float} - see _soil_at()
+var landmarks: Array = [] ## Array of {name: String, pos: Vector2, radius: float} - see WorldGenerator's structured Forest generators
+
+## Not labeled on-screen by design (per PLAN.md 9.6/9.7's "you don't
+## necessarily label them, they're spatial structures players nickname")
+## except this one HUD nicety - lets you say "meet at the Fallen Giant" and
+## have it mean something concrete.
+func nearest_landmark_name(pos: Vector2) -> String:
+	for l in landmarks:
+		if pos.distance_to(l["pos"]) < float(l["radius"]):
+			return l["name"]
+	return ""
 var day_time: float = 0.0
 var gen_factor: float = 1.0
 var generation: int = 1
@@ -117,6 +129,8 @@ func _apply_world_setup(seed_val: int, biome: String = "forest") -> void:
 	world_seed = seed_val
 	biome_id = biome
 	var data := WorldGenerator.generate(seed_val, biome)
+	root_dense_zones = data.get("root_dense_zones", [])
+	landmarks = data.get("landmarks", [])
 	for od in data["objects"]:
 		_spawn_object_local(od["id"], od["kind"], od["x"], od["y"], od["radius"], od["color"])
 	for fd in data["food"]:
@@ -242,6 +256,40 @@ func rpc_notify_player_died(entity_id: int) -> void:
 func rpc_despawn_creature(id: int) -> void:
 	_apply_despawn_creature(id)
 
+## The actual measurement for the design question PLAN.md now records as a
+## requirement (9.6): does the same starting lineage evolve differently
+## across seeds/profiles, or do players converge on the same mutations
+## regardless of world? One JSON-line per finished run, appended to
+## user://telemetry.jsonl, so a batch of test runs can just be grepped/
+## diffed afterward instead of hand-tracked.
+func _log_telemetry(c: Creature, outcome: String) -> void:
+	if not c.is_player or not _is_authority():
+		return
+	var entry := {
+		"time": Time.get_datetime_string_from_system(),
+		"biome": biome_id,
+		"world_seed": world_seed,
+		"lineage": c.lineage_id,
+		"generation": c.generation,
+		"outcome": outcome,
+		"mutations": c.mutation.owned.duplicate(),
+		"mass": c.stats.mass,
+		"distance_traveled": c.distance_traveled,
+		"apex_killed": c.apex_killed,
+		"near_landmark": nearest_landmark_name(c.global_position),
+	}
+	var path := "user://telemetry.jsonl"
+	var f: FileAccess
+	if FileAccess.file_exists(path):
+		f = FileAccess.open(path, FileAccess.READ_WRITE)
+		if f:
+			f.seek_end()
+	else:
+		f = FileAccess.open(path, FileAccess.WRITE)
+	if f:
+		f.store_line(JSON.stringify(entry))
+		f.close()
+
 func _on_creature_died(c: Creature) -> void:
 	if not _is_authority():
 		return
@@ -253,6 +301,7 @@ func _on_creature_died(c: Creature) -> void:
 	# Your carcass remains and can be eaten - death is not an instant wipe.
 	_broadcast_spawn_food(carcass_id, "carcass", c.global_position.x, c.global_position.y, carcass_amount, 12.0, Color("8b5a2b"), false, fresh, false)
 	if c.is_player:
+		_log_telemetry(c, "died")
 		_announce_player_died(c.entity_id)
 		_broadcast_despawn_creature(c.entity_id)
 	else:
@@ -364,15 +413,34 @@ func _try_enter_refuge(c: Creature) -> void:
 				c.refuge_type = "tree"
 				c.refuge_time = Creature.REFUGE_DURATION
 				return
-	if c.mutation.has_flag(EffectKeys.BURROW):
+	if c.mutation.has_flag(EffectKeys.BURROW) and _soil_at(c.global_position) == "soft":
 		c.refuge_type = "burrow"
 		c.refuge_time = Creature.REFUGE_DURATION
 		return
 	for o in objects_by_id.values():
 		if o.kind == "burrow" and c.global_position.distance_to(o.global_position) < c.stats.radius + o.radius + REFUGE_BURROW_OBJECT_RANGE:
+			# A placed Burrow is already dug - usable regardless of the
+			# ground under it, unlike digging fresh with Digging Claws.
 			c.refuge_type = "burrow"
 			c.refuge_time = Creature.REFUGE_DURATION
 			return
+
+## Digging Claws letting you burrow literally anywhere made the ground
+## itself stop mattering - "I don't need to care where safe ground is."
+## Soil is derived from what's already there rather than a separate
+## authored zone system: rocky ground forms around unbroken rocks (break
+## one with Jaws and the rubble becomes diggable again - a nice
+## consequence of two mutations interacting rather than something
+## deliberately designed in), and biome-specific dense terrain (e.g.
+## Ancient Forest's canopy) can mark itself root-dense via root_dense_zones.
+func _soil_at(pos: Vector2) -> String:
+	for o in objects_by_id.values():
+		if o.kind == "rock" and not o.broken and pos.distance_to(o.global_position) < o.radius + 55.0:
+			return "rocky"
+	for z in root_dense_zones:
+		if pos.distance_to(z["center"]) < float(z["radius"]):
+			return "root_dense"
+	return "soft"
 
 @rpc("any_peer", "call_remote", "reliable")
 func rpc_request_special() -> void:
@@ -457,6 +525,7 @@ func rpc_request_migrate() -> void:
 	# an access control.
 	var c := _creature_for_sender()
 	if c and c.can_migrate():
+		_log_telemetry(c, "migrated")
 		_announce_player_died(c.entity_id) # reuse the end-of-run screen with a win flag read from hp>0
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -470,6 +539,7 @@ func rpc_request_reproduce(inherit_mutation_id: String) -> void:
 	# actually owned and have the offspring spawn with it anyway.
 	if inherit_mutation_id != "" and not c.mutation.has(inherit_mutation_id):
 		return
+	_log_telemetry(c, "reproduced")
 	var peer_id := multiplayer.get_remote_sender_id()
 	var prior_mass := c.stats.mass
 	var lineage_id := c.lineage_id
@@ -752,12 +822,32 @@ func _physics_process(delta: float) -> void:
 			_check_pounce_hits(c, delta)
 		if not c.is_player and not c.dead:
 			WildlifeAI.process(c, self, delta)
+		_clamp_to_world(c)
 	if not _is_authority():
 		return
 	_tick_events(delta)
 	if current_event_id != "drought" and rng.randf() < BERRY_RESPAWN_CHANCE * delta:
 		_spawn_berry(rng.randf_range(40, WorldGenerator.WORLD_SIZE.x - 40), rng.randf_range(40, WorldGenerator.WORLD_SIZE.y - 40))
 	_broadcast_snapshot()
+
+const WORLD_MARGIN := 24.0
+
+## Real bug, caught from a debug log: WORLD_SIZE only ever controlled where
+## things spawned, not where a creature could actually go - nothing has
+## ever clamped movement to it, so wildlife/players (confirmed via
+## auto-wander test logs showing x positions in the thousands against a
+## declared 1600-wide world) could just walk straight out of the
+## ecosystem. Hard-clamped for now; a real edge treatment (dense
+## impassable forest / cliffs / water, so the boundary explains itself
+## visually) is a follow-up, not a substitute for this actually working.
+func _clamp_to_world(c: Creature) -> void:
+	var pos := c.global_position
+	var clamped := Vector2(
+		clampf(pos.x, WORLD_MARGIN, WorldGenerator.WORLD_SIZE.x - WORLD_MARGIN),
+		clampf(pos.y, WORLD_MARGIN, WorldGenerator.WORLD_SIZE.y - WORLD_MARGIN)
+	)
+	if clamped != pos:
+		c.global_position = clamped
 
 func _creature_in_water(c: Creature) -> bool:
 	for o in objects_by_id.values():
