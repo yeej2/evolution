@@ -255,6 +255,20 @@ evolved a combat archetype - see below.
     memory.
   - **Lineage memories have location context.** Biome, world seed, and
     nearest landmark are recorded for every memory.
+- **v0.3.2 — Egg respawn and species continuity.**
+  - **Death leaves an egg.** When a player dies they drop a fragile egg at
+    the death site. It stores the creature's species, generation, and all
+    owned mutations.
+  - **Incubate to hatch.** Other players can find the egg and press E to
+    incubate it. After enough interaction the egg hatches, respawning the
+    owner as the next generation with a random subset (up to 3) of their
+    original mutations. Extra mutations are lost.
+  - **Lone-player self-rescue.** In single-player, the dead player can
+    still press E to incubate their own egg; in multiplayer, dead players
+    must be rescued by a living packmate.
+  - **Egg rot fallback.** If the egg rots before hatching, the player gets
+    a class-select screen and rejoins as a fresh creature with no
+    mutations.
 - **Snapshot format changed again** (added `ep`/`ep_next`/`special_cooldown`
   replication) - as always, both host and joiners need to be on the same
   build or `rpc_snapshot` will throw an index-out-of-bounds trying to read

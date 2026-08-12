@@ -13,6 +13,7 @@ signal player_died(entity_id: int)
 signal event_state_changed(event_id: String, phase: String)
 signal hud_refresh
 signal local_player_ready(c: Creature)
+signal egg_died(peer_id: int)
 
 const CreatureScene: PackedScene = preload("res://scenes/Creature.tscn")
 const DAY_LENGTH := 60.0
@@ -56,6 +57,7 @@ var projectiles_by_id: Dictionary = {} ## int -> Projectile
 var _dead_reproduce_state: Dictionary = {} ## peer_id -> {lineage_id, mass, mutations, generation} - see rpc_request_reproduce()
 var _next_projectile_id: int = 1
 var _next_food_id: int = 1000
+var _next_object_id: int = 10000
 var _seen_initial_food_ids: Array = []
 var rng := RandomNumberGenerator.new()
 
@@ -89,6 +91,16 @@ func send_full_state_to_peer(peer_id: int) -> void:
 			rpc_update_object.rpc_id(peer_id, o.object_id, "broken", true)
 		if o.kind == "water" and current_event_id == "drought":
 			rpc_update_object_radius.rpc_id(peer_id, o.object_id, o.radius)
+		if o.kind == "egg":
+			var ed := {
+				"lineage_id": o.egg_lineage_id,
+				"owner_peer": o.egg_owner_peer,
+				"generation": o.egg_generation,
+				"species_id": o.egg_species_id,
+				"mutations": o.egg_mutations,
+				"decay": o.egg_decay,
+			}
+			rpc_spawn_egg.rpc_id(peer_id, o.object_id, o.global_position.x, o.global_position.y, ed)
 	var original_food_ids: Array = []
 	for id in food_by_id.keys():
 		if id < 1000:
@@ -155,6 +167,93 @@ func _spawn_object_local(id: int, kind: String, x: float, y: float, radius: floa
 	o.configure(id, kind, radius, color)
 	o.global_position = Vector2(x, y)
 	objects_by_id[id] = o
+
+func _broadcast_spawn_egg(id: int, x: float, y: float, data: Dictionary) -> void:
+	_spawn_egg_local(id, x, y, data)
+	if multiplayer.multiplayer_peer:
+		rpc_spawn_egg.rpc(id, x, y, data)
+
+@rpc("authority", "call_remote", "reliable")
+func rpc_spawn_egg(id: int, x: float, y: float, data: Dictionary) -> void:
+	_spawn_egg_local(id, x, y, data)
+
+func _spawn_egg_local(id: int, x: float, y: float, data: Dictionary) -> void:
+	var o := WorldObject.new()
+	objects_root.add_child(o)
+	o.configure(id, "egg", 14.0, Color(0.65, 0.55, 0.45))
+	o.global_position = Vector2(x, y)
+	o.egg_lineage_id = data.get("lineage_id", "")
+	o.egg_owner_peer = data.get("owner_peer", 0)
+	o.egg_generation = data.get("generation", 1)
+	o.egg_species_id = data.get("species_id", "")
+	o.egg_mutations = data.get("mutations", [])
+	o.egg_decay = data.get("decay", 60.0)
+	objects_by_id[id] = o
+
+func _broadcast_despawn_egg(id: int, reason: String = "") -> void:
+	_apply_despawn_egg(id, reason)
+	if multiplayer.multiplayer_peer:
+		rpc_despawn_egg.rpc(id, reason)
+
+@rpc("authority", "call_remote", "reliable")
+func rpc_despawn_egg(id: int, reason: String = "") -> void:
+	_apply_despawn_egg(id, reason)
+
+func _apply_despawn_egg(id: int, reason: String = "") -> void:
+	var o: WorldObject = objects_by_id.get(id)
+	if o:
+		if o.kind == "egg" and not o.egg_hatched and reason == "rotted":
+			_egg_rotted(o)
+		objects_by_id.erase(id)
+		o.queue_free()
+
+func _egg_rotted(o: WorldObject) -> void:
+	if o.egg_hatched:
+		return
+	o.egg_hatched = true
+	egg_died.emit(o.egg_owner_peer)
+
+func _hatch_egg(o: WorldObject) -> void:
+	if o.egg_hatched:
+		return
+	o.egg_hatched = true
+	var peer_id: int = o.egg_owner_peer
+	# If the owner is somehow already alive again (e.g. used Restart before
+	# the egg hatched), the egg is now irrelevant.
+	var existing: Creature = creatures_by_id.get(peer_to_entity.get(peer_id, -1))
+	if existing and is_instance_valid(existing) and not existing.dead:
+		_broadcast_despawn_egg(o.object_id, "obsoleted")
+		return
+	# Clear the dead peer's old mapping so the new creature becomes their
+	# local player.
+	peer_to_entity.erase(peer_id)
+	var id := NetworkManager.allocate_entity_id()
+	peer_to_entity[peer_id] = id
+	_broadcast_spawn_creature(id, true, o.egg_species_id, peer_id, o.egg_generation + 1)
+	var c: Creature = creatures_by_id.get(id)
+	if c:
+		c.global_position = o.global_position
+		# Inherit a random subset of stored mutations. Keep a few, lose the
+		# rest. Ties into the "lose perks on respawn" design.
+		var kept := o.egg_mutations.duplicate()
+		kept.shuffle()
+		var keep_count: int = mini(3, kept.size())
+		for i in range(keep_count):
+			c.add_mutation(kept[i])
+		NarrativeDB.add_memory("hatched_egg", c, "Generation %d hatched from an egg near %s." % [c.generation, nearest_landmark_name(c.global_position)], biome_id, world_seed, nearest_landmark_name(c.global_position))
+		_broadcast_narrative_sync()
+	_broadcast_despawn_egg(o.object_id, "hatched")
+
+func _tick_eggs(delta: float) -> void:
+	for o in objects_by_id.values():
+		if o.kind != "egg" or o.egg_hatched:
+			continue
+		o.egg_decay -= delta
+		# A little visual jiggle as it runs out of time.
+		if o.egg_decay <= 15.0 and fmod(o.egg_decay, 1.0) < delta:
+			o.queue_redraw()
+		if o.egg_decay <= 0.0:
+			_broadcast_despawn_egg(o.object_id, "rotted")
 
 ## Spitter's projectile - see Projectile.gd for why this doesn't need
 ## per-tick position sync like creatures do.
@@ -361,6 +460,20 @@ func _on_creature_died(c: Creature) -> void:
 			"mutations": c.mutation.owned.duplicate(),
 			"generation": c.generation,
 		}
+		# Leave a fragile egg behind. Another player (or the lone player in
+		# single-player) can incubate it. If it rots, the player falls back
+		# to a fresh class-select respawn.
+		var egg_id := _next_object_id
+		_next_object_id += 1
+		var egg_data := {
+			"lineage_id": c.lineage_id,
+			"owner_peer": c.owner_peer_id,
+			"generation": c.generation,
+			"species_id": c.species_id if c.species_id != "" else c.lineage_id,
+			"mutations": c.mutation.owned.duplicate(),
+			"decay": 90.0,
+		}
+		_broadcast_spawn_egg(egg_id, c.global_position.x, c.global_position.y, egg_data)
 		_announce_player_died(c.entity_id)
 		_broadcast_despawn_creature(c.entity_id)
 	else:
@@ -606,6 +719,35 @@ const EAT_INTERACT_RANGE := 14.0
 const REFUGE_TREE_RANGE := 20.0
 const REFUGE_BURROW_OBJECT_RANGE := 15.0
 
+
+@rpc("any_peer", "call_remote", "reliable")
+func rpc_request_incubate() -> void:
+	if not _is_authority():
+		return
+	# Living players incubate through rpc_request_eat. This RPC exists
+	# for dead single-player players who have no creature to send through
+	# the normal interact path.
+	_try_incubate_dead()
+
+func _try_incubate_dead() -> bool:
+	if not _is_authority():
+		return false
+	# Only the owner can incubate their own egg while dead, and only
+	# when there are no other players (single-player or lone host test).
+	# Multiplayer dead players must be rescued by a living packmate.
+	if multiplayer.multiplayer_peer != null and not multiplayer.get_peers().is_empty():
+		return false
+	var peer_id := multiplayer.get_unique_id() if multiplayer.multiplayer_peer else 1
+	for o in objects_by_id.values():
+		if o.kind != "egg" or o.egg_hatched or o.egg_owner_peer != peer_id:
+			continue
+		o.egg_incubation += 0.75
+		o.queue_redraw()
+		if o.egg_incubation >= 2.25:
+			_hatch_egg(o)
+		return true
+	return false
+
 @rpc("any_peer", "call_remote", "reliable")
 func rpc_request_eat() -> void:
 	if not _is_authority():
@@ -626,6 +768,8 @@ func rpc_request_eat() -> void:
 	var f := _nearest_food_to(c, 999.0)
 	if f and c.global_position.distance_to(f.global_position) <= c.stats.radius + f.radius + EAT_INTERACT_RANGE:
 		consume_food_by_creature(f, c)
+		return
+	if _try_incubate(c):
 		return
 	if _try_discovery(c):
 		return
@@ -658,6 +802,23 @@ func _try_enter_refuge(c: Creature) -> void:
 			c.refuge_type = "burrow"
 			c.refuge_time = Creature.REFUGE_DURATION
 			return
+
+func _try_incubate(c: Creature) -> bool:
+	if not _is_authority() or c.dead:
+		return false
+	const INCUBATE_RANGE := 24.0
+	const INCUBATE_PER_PRESS := 0.75
+	const HATCH_THRESHOLD := 2.25
+	for o in objects_by_id.values():
+		if o.kind != "egg" or o.egg_hatched:
+			continue
+		if c.global_position.distance_to(o.global_position) <= c.stats.radius + o.radius + INCUBATE_RANGE:
+			o.egg_incubation += INCUBATE_PER_PRESS
+			o.queue_redraw()
+			if o.egg_incubation >= HATCH_THRESHOLD:
+				_hatch_egg(o)
+			return true
+	return false
 
 ## Narrative discovery: pressing E near a Dead Giant tries to uncover the
 ## specific clue associated with the physical part the creature is touching.
@@ -1226,6 +1387,7 @@ func _physics_process(delta: float) -> void:
 				c.grab_target_id = -1
 	if not _is_authority():
 		return
+	_tick_eggs(delta)
 	_tick_events(delta)
 	if current_event_id != "drought" and rng.randf() < BERRY_RESPAWN_CHANCE * delta:
 		_spawn_berry(rng.randf_range(40, WorldGenerator.WORLD_SIZE.x - 40), rng.randf_range(40, WorldGenerator.WORLD_SIZE.y - 40))

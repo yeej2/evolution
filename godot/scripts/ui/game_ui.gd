@@ -29,6 +29,7 @@ var draft_row: HBoxContainer
 var gameover_title: Label
 var gameover_stats: Label
 var gameover_repro_row: HBoxContainer
+var lineage_title: Label
 var charge_bar: ProgressBar
 var ep_bar: ProgressBar
 var migration_rows: Array = [] ## Array of {row: HBoxContainer, label: Label, bar: ProgressBar}
@@ -52,6 +53,12 @@ func show_menu() -> void:
 
 func show_lineage_select() -> void:
 	_hide_all()
+	lineage_title.text = "Choose a lineage"
+	lineage_panel.visible = true
+
+func show_respawn_class_select() -> void:
+	_hide_all()
+	lineage_title.text = "Your egg is lost. Choose a new form."
 	lineage_panel.visible = true
 
 func show_hud() -> void:
@@ -366,9 +373,9 @@ func _build_lineage_select() -> void:
 	lineage_panel = _panel()
 	var v := VBoxContainer.new()
 	lineage_panel.add_child(v)
-	var title := Label.new()
-	title.text = "Choose a lineage"
-	v.add_child(title)
+	lineage_title = Label.new()
+	lineage_title.text = "Choose a lineage"
+	v.add_child(lineage_title)
 	var row := HBoxContainer.new()
 	v.add_child(row)
 	for id in LineageDB.all_ids():

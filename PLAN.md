@@ -553,3 +553,27 @@ narrative loop before deciding whether the idea works.
 - **README stale note fixed.** The death→reproduction note no longer
   lists it as a not-yet-fixed follow-up.
 
+### 9.13 v0.3.2 — Egg respawn and species continuity
+
+A short pass that makes player death part of the species survival loop
+rather than an immediate run end.
+
+- **Death leaves an egg.** The server spawns a `WorldObject` of kind
+  `egg` at the player's death position. It stores the owner's `peer_id`,
+  `lineage_id`, `species_id`, `generation`, full mutation list, and a
+  decay timer.
+- **Incubation / hatch.** A living creature can press E near an egg to
+  increment its `egg_incubation`. At the threshold, `_hatch_egg()` spawns
+  a new player creature for the egg's owner at the next generation. The
+  hatched creature keeps a random subset of up to 3 stored mutations;
+  everything else is lost.
+- **Multiplayer rescue.** Dead players cannot self-incubate while other
+  peers are connected. A packmate must find and warm the egg. This turns
+  death into a clutch moment: "hold the egg while I fight."
+- **Lone-player fallback.** In true single-player (no network peer, or a
+  host with no joined clients) the dead player can still incubate their
+  own egg. If the egg rots, the UI falls back to `show_respawn_class_`
+  `select()` and the player rejoins as a fresh class with no mutations.
+- **Catch-up replication.** Dynamic eggs are sent to late-joining clients
+  via `rpc_spawn_egg` in `send_full_state_to_peer`.
+

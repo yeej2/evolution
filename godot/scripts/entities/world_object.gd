@@ -20,6 +20,15 @@ var color: Color = Color.WHITE
 ## flip goes out, the same way "burned"/"open" already do.
 var rock_hp: float = 30.0
 
+## Egg-only: this object is a respawn cocoon left by a dead player.
+var egg_lineage_id: String = ""
+var egg_owner_peer: int = 0
+var egg_generation: int = 0
+var egg_species_id: String = ""
+var egg_mutations: Array = []
+var egg_incubation: float = 0.0 ## accumulated interaction time
+var egg_decay: float = 60.0 ## seconds until the egg rots
+var egg_hatched: bool = false
 var _body: StaticBody2D = null
 
 ## Logs sit on their own collision layer, separate from trees/rocks, so a
@@ -135,3 +144,11 @@ func _draw() -> void:
 			draw_circle(Vector2.ZERO, radius, Color(0.82, 0.78, 0.7))
 			draw_circle(Vector2(-radius * 0.25, -radius * 0.1), radius * 0.2, Color(0.15, 0.15, 0.15))
 			draw_circle(Vector2(radius * 0.25, -radius * 0.1), radius * 0.2, Color(0.15, 0.15, 0.15))
+		"egg":
+			# A leathery cocoon/egg. Hatching progress brightens the shell.
+			var progress := clampf(egg_incubation / 2.0, 0.0, 1.0)
+			var shell := color.lerp(Color(0.9, 0.85, 0.75), progress)
+			draw_circle(Vector2.ZERO, radius, shell)
+			draw_arc(Vector2.ZERO, radius * 0.7, 0.0, TAU, 12, Color(0.3, 0.25, 0.2, 0.4), 2.0)
+			draw_circle(Vector2(-radius * 0.25, 0.0), radius * 0.12, Color(0.2, 0.18, 0.15, 0.5))
+			draw_circle(Vector2(radius * 0.25, 0.0), radius * 0.12, Color(0.2, 0.18, 0.15, 0.5))

@@ -70,6 +70,8 @@ func _maybe_run_cli_autopilot() -> void:
 					_test_narrative()
 				elif e == "--testrestart":
 					_test_restart()
+				elif e == "--testegg":
+					_test_egg()
 		elif arg.begins_with("--autojoin="):
 			# Supports both host:lineage (default port) and
 			# host:port:lineage, matching the interactive Join field's
@@ -214,6 +216,31 @@ func _test_restart() -> void:
 		print("[test] restart succeeded: new my_creature hp=%.1f gen=%d" % [my_creature.stats.hp, my_creature.generation])
 	else:
 		print("[test] restart FAILED: my_creature is still null")
+
+## Test-only: kill the local player, then press E (incubate) to hatch the
+## egg and confirm respawn keeps a random subset of mutations.
+func _test_egg() -> void:
+	await get_tree().create_timer(2.0).timeout
+	if my_creature == null:
+		print("[test] no my_creature")
+		return
+	for m in ["claws", "legs", "jaws", "keen_smell"]:
+		my_creature.add_mutation(m)
+	var before_muts := my_creature.mutation.owned.duplicate()
+	print("[test] killing my_creature with muts=%s" % [before_muts])
+	my_creature.stats.hp = 0.0
+	world._on_creature_died(my_creature)
+	await get_tree().create_timer(1.0).timeout
+	print("[test] my_creature_null=%s" % [my_creature == null])
+	# Press E three times to incubate the egg in single-player.
+	for i in range(3):
+		_send_eat()
+		await get_tree().create_timer(0.4).timeout
+	await get_tree().create_timer(1.5).timeout
+	if my_creature != null:
+		print("[test] egg hatched: gen=%d hp=%.1f muts=%s from=%s" % [my_creature.generation, my_creature.stats.hp, my_creature.mutation.owned, before_muts])
+	else:
+		print("[test] egg FAILED to hatch")
 
 ## Test-only: verify Predatory Talons' combo stacking by biting the same
 ## nearby target three times in a row and confirming increasing damage.
@@ -401,6 +428,7 @@ func _spawn_world() -> void:
 	world.player_died.connect(_on_player_died)
 	world.discovery_made.connect(_on_discovery_made)
 	world.mutation_draft_offered.connect(_on_mutation_draft_offered)
+	world.egg_died.connect(_on_egg_died)
 	world.event_state_changed.connect(_on_event_state_changed)
 	world.local_player_ready.connect(_on_local_player_ready)
 	world.hud_refresh.connect(_on_hud_refresh)
@@ -424,6 +452,7 @@ func _on_lineage_chosen(lineage_id: String) -> void:
 func _on_local_player_ready(c: Creature) -> void:
 	my_creature = c
 	_spectating = false
+	ui.show_hud()
 
 func _on_discovery_made(text: String) -> void:
 	ui.event_label.text = "ANCESTRAL DISCOVERY\n%s" % text
@@ -484,6 +513,16 @@ func _on_restart_pressed() -> void:
 
 func _on_event_state_changed(event_id: String, phase: String) -> void:
 	ui.show_event_banner(event_id, phase)
+
+func _on_egg_died(peer_id: int) -> void:
+	# Only the local player needs to see the class-select fallback.
+	var local_peer := multiplayer.get_unique_id() if multiplayer.multiplayer_peer else 1
+	if peer_id != local_peer:
+		return
+	if my_creature != null and is_instance_valid(my_creature):
+		return
+	_spectating = true
+	ui.show_respawn_class_select()
 
 func _on_hud_refresh() -> void:
 	if my_creature and is_instance_valid(my_creature):
@@ -641,6 +680,14 @@ func _send_pounce(charge: float) -> void:
 		world.rpc_request_pounce.rpc_id(1, charge)
 
 func _send_eat() -> void:
+	# If we're dead (spectating), E incubates our egg. If we're alive, it's
+	# the normal eat/interact action.
+	if my_creature == null or (my_creature and my_creature.dead):
+		if NetworkManager.is_hosting or multiplayer.multiplayer_peer == null:
+			world.rpc_request_incubate()
+		else:
+			world.rpc_request_incubate.rpc_id(1)
+		return
 	if NetworkManager.is_hosting or multiplayer.multiplayer_peer == null:
 		world.rpc_request_eat()
 	else:
