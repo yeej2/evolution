@@ -19,6 +19,7 @@ const BLEED_ON_HIT := "bleed_on_hit" ## seconds of bleed applied to bitten targe
 const POISON_ON_HIT := "poison_on_hit" ## seconds of poison applied to bitten target
 const HIDDEN_DAMAGE_MULT := "hidden_damage_mult" ## bonus multiplier on first bite after being hidden
 const KNOCKBACK_MULT := "knockback_mult"
+const KNOCKBACK_TAKEN_MULT := "knockback_taken_mult"
 const STUN_ON_HIT := "stun_on_hit" ## seconds of stun applied to bitten target
 const STUN_ON_POUNCE := "stun_on_pounce" ## seconds of stun applied only while pouncing
 const STUN_SMALL_PREY_ON_POUNCE := "stun_small_prey_on_pounce"

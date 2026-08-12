@@ -22,6 +22,7 @@ MutationDB="*res://scripts/autoload/mutation_db.gd"
 SpeciesDB="*res://scripts/autoload/species_db.gd"
 LineageDB="*res://scripts/autoload/lineage_db.gd"
 EventDB="*res://scripts/autoload/event_db.gd"
+NarrativeDB="*res://scripts/autoload/narrative_db.gd"
 NetworkManager="*res://scripts/net/network_manager.gd"
 GameState="*res://scripts/autoload/game_state.gd"
 

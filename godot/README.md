@@ -215,6 +215,26 @@ evolved a combat archetype - see below.
     `FLAG_APEX_CHARGING` client flag. Nearby players get a proximity
     camera shake and a brief "DANGER" cue; nearby prey and predators
     also flee from it, so the *ecosystem* tells you it's dangerous.
+- **v0.3 — Ancestral Memory (narrative + hidden evolution).**
+  - **The Dead Giant landmark** is now generated in every Forest biome as
+    a colossal Firstborn skeleton. Press E near it to examine, scent,
+    excavate, break, and climb the remains — but each clue requires the
+    right adaptation (Keen Smell, Digging Claws, Jaws, Climbing Claws).
+  - **Mystery progress persists** across generations and runs. The server
+    stashes discovered clues and Ancestral Insights in `user://narrative.json`
+    and syncs them to joining clients.
+  - **Ancestral Insights unlock hidden mutations.** Breaking open a
+    Firstborn bone reveals **Hollow Skeleton**, which lets compatible
+    organisms (Long Jumper or Climbing Claws) later draft **Hollow Bones**.
+    Knowledge makes it possible; biology makes it compatible.
+  - **Ancestral Memory UI** from the main menu shows current mystery
+    progress, known insights, and the last 15 lineage memories.
+  - **Lineage memories** record first mutation, first reproduction,
+    migration, apex kill, death-by-apex/predator, and surviving drought /
+    wildfire.
+  - **The Hungry Pack Chapter** spawns an extra Razorcat wave plus a
+    tougher alpha at the start of the event. It leaves with the event,
+    so populations don't ratchet up forever.
 - **Snapshot format changed again** (added `ep`/`ep_next`/`special_cooldown`
   replication) - as always, both host and joiners need to be on the same
   build or `rpc_snapshot` will throw an index-out-of-bounds trying to read

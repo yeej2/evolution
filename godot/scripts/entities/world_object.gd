@@ -110,3 +110,11 @@ func _draw() -> void:
 		"exit":
 			draw_circle(Vector2.ZERO, radius, color)
 			draw_arc(Vector2.ZERO, radius + 6, 0, TAU, 24, color, 3.0)
+		"dead_giant":
+			# A Firstborn skeleton - a few large, pale shapes so it reads as
+			# enormous bones even without dedicated art.
+			var bone := Color(0.78, 0.74, 0.66)
+			draw_circle(Vector2.ZERO, radius * 0.85, bone)
+			draw_circle(Vector2(-radius * 0.6, radius * 0.3), radius * 0.35, Color(bone, 0.7))
+			draw_circle(Vector2(radius * 0.6, -radius * 0.2), radius * 0.28, Color(bone, 0.7))
+			draw_circle(Vector2.ZERO, radius * 0.12, Color(0.2, 0.2, 0.2))

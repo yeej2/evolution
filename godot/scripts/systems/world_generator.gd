@@ -108,10 +108,10 @@ const _WATER_RADIUS := {
 ## Flooded Forest becomes "the wildfire almost never matters here, water's
 ## the story" one without either needing its own event list.
 const _EVENT_WEIGHTS := {
-	"forest_dry": {"drought": 4.0, "wildfire": 1.5},
-	"forest_flooded": {"drought": 0.2, "wildfire": 0.5},
-	"forest_lush": {"predator_surge": 1.5},
-	"forest_ancient": {"predator_surge": 1.3, "wildfire": 1.4},
+	"forest_dry": {"drought": 4.0, "wildfire": 1.5, "hungry_pack": 1.4},
+	"forest_flooded": {"drought": 0.2, "wildfire": 0.5, "hungry_pack": 1.2},
+	"forest_lush": {"predator_surge": 1.5, "hungry_pack": 0.8},
+	"forest_ancient": {"predator_surge": 1.3, "wildfire": 1.4, "hungry_pack": 1.6},
 }
 
 const _STRUCTURED_BIOMES := ["forest_lush", "forest_dry", "forest_flooded", "forest_ancient"]
@@ -257,15 +257,29 @@ static func _anchors(rng: RandomNumberGenerator, count: int, min_sep: float, mar
 	return pts
 
 static func _structured_forest(rng: RandomNumberGenerator, biome_id: String, s: Dictionary, colors: Dictionary, water_radius: float) -> Dictionary:
+	var built: Dictionary
 	match biome_id:
 		"forest_dry":
-			return _gen_dry_forest(rng, s, colors, water_radius)
+			built = _gen_dry_forest(rng, s, colors, water_radius)
 		"forest_flooded":
-			return _gen_flooded_forest(rng, s, colors, water_radius)
+			built = _gen_flooded_forest(rng, s, colors, water_radius)
 		"forest_ancient":
-			return _gen_ancient_forest(rng, s, colors, water_radius)
+			built = _gen_ancient_forest(rng, s, colors, water_radius)
 		_:
-			return _gen_lush_forest(rng, s, colors, water_radius)
+			built = _gen_lush_forest(rng, s, colors, water_radius)
+	# Dead Giant is the v0.3 narrative anchor: one colossal Firstborn
+	# skeleton in every Forest biome, placed far from the exit.
+	_add_dead_giant(rng, built)
+	return built
+
+static func _add_dead_giant(rng: RandomNumberGenerator, built: Dictionary) -> void:
+	var pts: Array = _anchors(rng, 1, 380.0, 240.0)
+	if pts.is_empty():
+		return
+	var pos: Vector2 = pts[0]
+	var radius: float = 110.0
+	built["placements"].append({"kind": "dead_giant", "pos": pos, "radius": radius, "color": Color.WHITE})
+	built["landmarks"].append({"name": "Dead Giant", "pos": pos, "radius": radius})
 
 ## Dry Forest: scarcity forces you toward a handful of known, contested
 ## places rather than "water slows me down more often" - one waterhole,

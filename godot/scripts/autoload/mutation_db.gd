@@ -289,6 +289,15 @@ func _build() -> void:
 		[], _others(diet_branch, "diet_scavenger"),
 		{EffectKeys.CARCASS_RESTORE_MULT: 1.4, EffectKeys.COOKED_CARCASS_RESTORE_MULT: 1.7, EffectKeys.FRESH_KILL_RESTORE_MULT: 0.7})
 
+	# ---- Hidden / Ancestral mutations ----
+	# These are not offered in normal drafts until their Ancestral Insight is
+	# discovered by the lineage. Each one is meant to expand the possibility
+	# space, not just be a straight power increase.
+	_def("hollow_bones", "Hollow Bones", "Hidden", "ancestral", 2,
+		"Bones become light and hollow, like the Firstborn's.",
+		"Pounce distance +30%, mass reduced", "Less HP, more knockback taken",
+		[], [], {EffectKeys.POUNCE_DISTANCE_MULT: 1.3, EffectKeys.MASS_ADD: -0.3, EffectKeys.MAX_HP_ADD: -8.0, EffectKeys.KNOCKBACK_TAKEN_MULT: 1.25})
+
 ## Helper: every id in `group` except `keep`, used to build symmetric exclusion sets.
 func _others(group: Array, keep: String) -> Array:
 	var out: Array = []

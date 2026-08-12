@@ -48,3 +48,4 @@ func _build() -> void:
 	_def("drought", "Drought", 30.0, 0.0, Color(0.63, 0.47, 0.16, 0.3), {"water_shrink": 0.5})
 	_def("wildfire", "Wildfire", 32.0, 6.0, Color(0.82, 0.35, 0.08, 0.28), {"band_width": 160.0})
 	_def("predator_surge", "Predator Surge", 28.0, 4.0, Color(0.55, 0.08, 0.08, 0.25), {"extra_predators": 3, "extra_apex": 1})
+	_def("hungry_pack", "The Hungry Pack", 45.0, 3.0, Color(0.7, 0.15, 0.15, 0.3), {"extra_razorcats": 5, "alpha": true})

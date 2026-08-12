@@ -481,3 +481,42 @@ lifecycle death->reproduce bug that was blocking real runs.
 - The three archetypes still each have one mutation path, not the full
   branching trees or hybrids described in the original ask.
 
+### 9.11 v0.3 — Ancestral Memory (narrative + hidden evolution)
+
+This pass tests whether adding a narrative layer and lineage progression
+makes the player want to continue exploring across runs.
+
+- **The Dead Giant** is a generated Firstborn landmark in every Forest
+  biome. It offers five clues, each requiring a different adaptation:
+  `examine` (none), `smell_giant` (Keen Smell), `excavate_giant`
+  (Digging Claws), `break_bone` (Strong Jaws / Jaws), and `reach_skull`
+  (Climbing Claws). Discoveries persist in `user://narrative.json` and
+  sync to joining clients.
+- **Ancestral Insights and hidden mutations.** The `break_bone` clue
+  grants the Ancestral Insight **Hollow Skeleton**. Once the lineage
+  knows it, compatible creatures (Long Jumper or Climbing Claws) can
+  see **Hollow Bones** in their mutation draft. This proves the
+  knowledge → biology → evolution loop.
+- **Ancestral Memory UI** in the main menu shows the Dead Giant
+  progress (X / 5), unlocked insights, and the last 15 lineage memories.
+- **Lineage memories** record first mutation, first reproduction,
+  migration, first apex kill, death-by-apex/predator, and surviving
+  major Drought/Wildfire events.
+- **The Hungry Pack** ecological Chapter spawns extra Razorcats plus a
+  toughened alpha at the start of the event; they despawn when it ends.
+
+**Honest limitations / scope notes:**
+- Only one mystery (the Dead Giant), one insight (Hollow Skeleton), and
+  one hidden mutation (Hollow Bones) are built. The architecture
+  (`NarrativeDB`, `CLUES`, `INSIGHTS`, `CHAPTERS`) is generic enough to
+  add more.
+- No dedicated art for the Dead Giant: it is drawn as a cluster of
+  large pale circles. It still reads as a landmark on the map.
+- The named rival/alpha system is minimal: the alpha gets +HP, +mass,
+  and +bite damage, but it does not yet carry a persistent name or scar.
+- Biome-specific event weights are simple multipliers; future Chapters
+  may deserve their own `chapter_director.gd` files once we have more.
+- Ecological Chapters are currently implemented through the existing
+  WorldEvent system. A dedicated Chapter Director may be worthwhile if
+  more Chapters are added.
+

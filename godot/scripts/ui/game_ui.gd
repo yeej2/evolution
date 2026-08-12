@@ -16,6 +16,8 @@ var lineage_panel: Control
 var hud_panel: Control
 var draft_panel: Control
 var gameover_panel: Control
+var records_panel: Control
+var records_label: RichTextLabel
 var message_label: Label
 var event_label: Label
 var hud_labels: Dictionary = {}
@@ -38,6 +40,7 @@ func _ready() -> void:
 	_build_hud()
 	_build_draft()
 	_build_gameover()
+	_build_records()
 
 func show_message(text: String) -> void:
 	message_label.text = text
@@ -267,6 +270,7 @@ func _hide_all() -> void:
 	lineage_panel.visible = false
 	hud_panel.visible = false
 	gameover_panel.visible = false
+	records_panel.visible = false
 	message_label.visible = false
 	charge_bar.visible = false
 
@@ -342,6 +346,10 @@ func _build_menu() -> void:
 	join_btn.text = "Join"
 	join_btn.pressed.connect(func(): join_pressed.emit(address_edit.text))
 	join_row.add_child(join_btn)
+	var records_btn := Button.new()
+	records_btn.text = "Ancestral Memory"
+	records_btn.pressed.connect(show_records)
+	v.add_child(records_btn)
 	message_label = Label.new()
 	message_label.visible = false
 	v.add_child(message_label)
@@ -504,3 +512,60 @@ func _build_gameover() -> void:
 	restart_btn.pressed.connect(func(): restart_pressed.emit())
 	v.add_child(restart_btn)
 	gameover_panel.visible = false
+
+func _build_records() -> void:
+	records_panel = _panel()
+	records_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	records_panel.visible = false
+	var v := VBoxContainer.new()
+	records_panel.add_child(v)
+	var title := Label.new()
+	title.text = "Ancestral Memory"
+	v.add_child(title)
+	records_label = RichTextLabel.new()
+	records_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	records_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	records_label.bbcode_enabled = true
+	v.add_child(records_label)
+	var close_btn := Button.new()
+	close_btn.text = "Close"
+	close_btn.pressed.connect(hide_records)
+	v.add_child(close_btn)
+
+func show_records() -> void:
+	_hide_all()
+	_refresh_records()
+	records_panel.visible = true
+
+func hide_records() -> void:
+	records_panel.visible = false
+	show_menu()
+
+func _refresh_records() -> void:
+	var text := "[b]Mysteries[/b]\n"
+	for mid in NarrativeDB.MYSTERIES.keys():
+		var m := NarrativeDB.mystery(mid)
+		var found: int = NarrativeDB.mystery_clue_count(mid)
+		var total: int = NarrativeDB.mystery_clue_total(mid)
+		text += "%s — %d / %d\n" % [m.get("display_name", mid), found, total]
+		for cid in m.get("clue_ids", []):
+			if cid in NarrativeDB.discovered_clues:
+				var cd := NarrativeDB.clue(cid)
+				text += "  • %s\n" % cd.get("display_name", cid)
+	text += "\n[b]Ancestral Insights[/b]\n"
+	if NarrativeDB.unlocked_insights.is_empty():
+		text += "None yet. Explore the world to learn forgotten biology.\n"
+	else:
+		for iid in NarrativeDB.unlocked_insights:
+			var idata := NarrativeDB.insight(iid)
+			text += "  • %s\n" % idata.get("display_name", iid)
+	text += "\n[b]Lineage History[/b]\n"
+	if NarrativeDB.memories.is_empty():
+		text += "No memories recorded yet.\n"
+	else:
+		# Most recent first.
+		var ordered := NarrativeDB.memories.duplicate()
+		ordered.reverse()
+		for entry in ordered.slice(0, 15):
+			text += "  • %s\n" % entry.get("display_text", "")
+	records_label.text = text

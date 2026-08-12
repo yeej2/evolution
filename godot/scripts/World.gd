@@ -6,6 +6,7 @@ extends Node2D
 ## of state here; clients only ever call the request_* RPCs and read back
 ## whatever the authority broadcasts.
 
+signal discovery_made(text: String)
 signal mutation_draft_offered(choices: Array)
 signal migrate_rejected
 signal player_died(entity_id: int)
@@ -78,6 +79,7 @@ func _on_peer_connected_send_catchup(peer_id: int) -> void:
 ## since, and every creature currently alive.
 func send_full_state_to_peer(peer_id: int) -> void:
 	rpc_setup_world.rpc_id(peer_id, world_seed, biome_id)
+	rpc_sync_narrative.rpc_id(peer_id, NarrativeDB.serialize())
 	for o in objects_by_id.values():
 		if o.burned:
 			rpc_update_object.rpc_id(peer_id, o.object_id, "burned", true)
@@ -255,8 +257,8 @@ func _apply_spawn_creature(id: int, is_player: bool, kind_id: String, owner_peer
 func rpc_spawn_creature(id: int, is_player: bool, kind_id: String, owner_peer: int, gen: int) -> void:
 	_apply_spawn_creature(id, is_player, kind_id, owner_peer, gen)
 
-func _spawn_wildlife(creature_type: String) -> void:
-	var species_id: String = SpeciesDB.random_id_of_type(creature_type, rng)
+func _spawn_wildlife(creature_type: String, force_species_id: String = "") -> void:
+	var species_id: String = force_species_id if force_species_id != "" else SpeciesDB.random_id_of_type(creature_type, rng)
 	if species_id == "":
 		return
 	var id := NetworkManager.allocate_entity_id()
@@ -339,6 +341,12 @@ func _on_creature_died(c: Creature) -> void:
 	_broadcast_spawn_food(carcass_id, "carcass", c.global_position.x, c.global_position.y, carcass_amount, 12.0, Color("8b5a2b"), false, fresh, false)
 	if c.is_player:
 		_log_telemetry(c, "died")
+		var attacker_name := attacker.species_data.display_name if attacker and attacker.species_data else "a predator"
+		if attacker and attacker.species_data and attacker.species_data.creature_type == "apex":
+			NarrativeDB.add_memory("killed_by_apex", c, "Generation %d was killed by the %s." % [c.generation, attacker_name])
+		else:
+			NarrativeDB.add_memory("killed_by_rival", c, "Generation %d was killed by %s." % [c.generation, attacker_name])
+		_broadcast_narrative_sync()
 		# Real bug, not just a design gap: reproduce previously only ever
 		# worked after a migration win, because _creature_for_sender()
 		# can't find a creature that's already been despawned - and death
@@ -356,7 +364,13 @@ func _on_creature_died(c: Creature) -> void:
 		_broadcast_despawn_creature(c.entity_id)
 	else:
 		if fresh and c.species_data.creature_type == "apex":
+			var was_first := false
+			if attacker and attacker.is_player and not attacker.apex_killed:
+				was_first = true
 			attacker.apex_killed = true
+			if was_first:
+				NarrativeDB.add_memory("first_apex_kill", attacker, "Generation %d killed its first apex: the %s." % [attacker.generation, c.species_data.display_name if c.species_data else "apex"])
+				_broadcast_narrative_sync()
 		_broadcast_despawn_creature(c.entity_id)
 		_spawn_wildlife(c.species_data.creature_type)
 
@@ -609,6 +623,8 @@ func rpc_request_eat() -> void:
 	if f and c.global_position.distance_to(f.global_position) <= c.stats.radius + f.radius + EAT_INTERACT_RANGE:
 		consume_food_by_creature(f, c)
 		return
+	if _try_discovery(c):
+		return
 	_try_enter_refuge(c)
 
 ## Escape interactions (PLAN.md): a Razorcat is chasing you, so you climb a
@@ -638,6 +654,71 @@ func _try_enter_refuge(c: Creature) -> void:
 			c.refuge_type = "burrow"
 			c.refuge_time = Creature.REFUGE_DURATION
 			return
+
+## Narrative discovery: pressing E near a Dead Giant tries to uncover the
+## next undiscovered clue that the creature's body can actually access.
+## The server validates prerequisites and required mutations, so a client
+## cannot fake a discovery.
+func _try_discovery(c: Creature) -> bool:
+	if not _is_authority():
+		return false
+	const DISCOVERY_RANGE := 140.0
+	var landmark = null
+	for o in objects_by_id.values():
+		if o.kind == "dead_giant" and c.global_position.distance_to(o.global_position) <= c.stats.radius + o.radius + DISCOVERY_RANGE:
+			landmark = o
+			break
+	if landmark == null:
+		return false
+	# Try clues in discovery order, but the next one may not be accessible
+	# with current mutations - in which case we tell the player that.
+	var mystery_id := "dead_giant"
+	var m: Dictionary = NarrativeDB.mystery(mystery_id)
+	var clue_ids: Array = m.get("clue_ids", [])
+	for clue_id in clue_ids:
+		if clue_id in NarrativeDB.discovered_clues:
+			continue
+		if NarrativeDB.discover_clue(clue_id, c):
+			_show_discovery(c.owner_peer_id, NarrativeDB.clue(clue_id).get("discovery_text", ""))
+			_broadcast_narrative_sync()
+			return true
+		else:
+			var data := NarrativeDB.clue(clue_id)
+			var req: String = data.get("required_mutation_id", "")
+			if req != "" and not c.mutation.has(req):
+				_show_discovery(c.owner_peer_id, "Something more could be learned here... but not with this body.")
+				return true
+			# prerequisites not met: silently try the next? No, show that the
+			# player is missing a prerequisite (which should be rare because E
+			# is also used for other things - we don't want false-positives).
+			var missing: Array = []
+			for pre in data.get("prerequisite_clue_ids", []):
+				if not pre in NarrativeDB.discovered_clues:
+					missing.append(pre)
+			if not missing.is_empty():
+				_show_discovery(c.owner_peer_id, "This part of the skeleton is confusing. Another clue may be needed first.")
+				return true
+	return false
+
+func _show_discovery(peer_id: int, text: String) -> void:
+	if peer_id == multiplayer.get_unique_id() or multiplayer.multiplayer_peer == null:
+		discovery_made.emit(text)
+	else:
+		rpc_show_discovery.rpc_id(peer_id, text)
+
+func _broadcast_narrative_sync() -> void:
+	if multiplayer.multiplayer_peer:
+		rpc_sync_narrative.rpc(NarrativeDB.serialize())
+	else:
+		pass # Single-player host already has the authoritative state.
+
+@rpc("authority", "call_remote", "reliable")
+func rpc_show_discovery(text: String) -> void:
+	discovery_made.emit(text)
+
+@rpc("authority", "call_remote", "reliable")
+func rpc_sync_narrative(data: Dictionary) -> void:
+	NarrativeDB.deserialize(data)
 
 ## Digging Claws letting you burrow literally anywhere made the ground
 ## itself stop mattering - "I don't need to care where safe ground is."
@@ -712,11 +793,24 @@ func rpc_choose_mutation(mutation_id: String) -> void:
 	var choices := c.pending_mutation_choices
 	c.pending_mutation_choices = []
 	if mutation_id in choices:
+		var was_first: bool = c.mutation.owned.is_empty()
 		c.add_mutation(mutation_id)
+		if was_first and not c.mutation.owned.is_empty():
+			NarrativeDB.add_memory("first_mutation", c, "Generation %d developed its first mutation: %s." % [c.generation, MutationDB.get_mutation(c.mutation.owned[0]).display_name])
+			_broadcast_narrative_sync()
 
 func _offer_mutation_draft(c: Creature) -> void:
 	var weights: Dictionary = c.lineage_data.mutation_weights if c.lineage_data else {}
 	var choices: Array = c.mutation.roll_choices(3, weights, GameState.rng)
+	# Ancestral mutations: hidden until discovered, then injected into the
+	# draft if this creature's body is compatible. We add them to the same
+	# pending list so the existing server validation works unchanged.
+	var hidden := NarrativeDB.eligible_hidden_mutations(c)
+	for h in hidden:
+		if not h in choices:
+			choices.append(h)
+		if choices.size() >= 4:
+			break
 	if choices.is_empty():
 		return
 	c.pending_mutation_choices = choices
@@ -740,6 +834,8 @@ func rpc_request_migrate() -> void:
 	var c := _creature_for_sender()
 	if c and c.can_migrate():
 		_log_telemetry(c, "migrated")
+		NarrativeDB.add_memory("first_migration", c, "Generation %d migrated to a new world." % c.generation)
+		_broadcast_narrative_sync()
 		_announce_player_died(c.entity_id) # reuse the end-of-run screen with a win flag read from hp>0
 	elif c:
 		# Previously failed completely silently if the server ever disagreed
@@ -804,6 +900,8 @@ func rpc_request_reproduce(inherit_mutation_id: String) -> void:
 		nc.stats.mass += prior_mass * 0.1
 		if inherit_mutation_id != "":
 			nc.add_mutation(inherit_mutation_id)
+		NarrativeDB.add_memory("first_reproduction", nc, "Generation %d was born from the lineage." % nc.generation)
+		_broadcast_narrative_sync()
 
 func _creature_for_sender() -> Creature:
 	var peer_id := multiplayer.get_remote_sender_id()

@@ -14,6 +14,8 @@ static func start_event(world: World, id: String) -> void:
 			_wildfire_start(world)
 		"predator_surge":
 			_predator_surge_start(world)
+		"hungry_pack":
+			_hungry_pack_start(world)
 
 static func tick(world: World, id: String, delta: float) -> void:
 	match id:
@@ -23,6 +25,8 @@ static func tick(world: World, id: String, delta: float) -> void:
 			_wildfire_tick(world, delta)
 		"predator_surge":
 			pass # aggression/spawns are one-shot at start; see wildlife_ai.gd for the ongoing effect
+		"hungry_pack":
+			pass
 
 static func end_event(world: World, id: String) -> void:
 	match id:
@@ -32,6 +36,8 @@ static func end_event(world: World, id: String) -> void:
 			_wildfire_end(world)
 		"predator_surge":
 			_predator_surge_end(world)
+		"hungry_pack":
+			_hungry_pack_end(world)
 
 # --- Drought ---
 
@@ -50,6 +56,8 @@ static func _drought_end(world: World) -> void:
 	for c in world.creatures_by_id.values():
 		if c.is_player and c.stats.hp > 0.0:
 			c.survived_drought = true
+			NarrativeDB.add_memory("survived_drought", c, "Generation %d survived the Long Drought." % c.generation)
+			world._broadcast_narrative_sync()
 
 static func _drought_tick(world: World, delta: float) -> void:
 	var waters: Array = []
@@ -87,6 +95,8 @@ static func _wildfire_end(world: World) -> void:
 	for c in world.creatures_by_id.values():
 		if c.is_player and c.stats.hp > 0.0:
 			c.survived_wildfire = true
+			NarrativeDB.add_memory("survived_wildfire", c, "Generation %d survived the Burning Season." % c.generation)
+			world._broadcast_narrative_sync()
 
 static func _wildfire_coord(world: World, pos: Vector2) -> float:
 	match world.wildfire_direction:
@@ -179,3 +189,34 @@ static func _predator_surge_end(world: World) -> void:
 		if world.creatures_by_id.has(id):
 			world._broadcast_despawn_creature(id)
 	world.event_data.erase("surge_spawned_ids")
+
+# --- The Hungry Pack ---
+# A v0.3 ecological Chapter: a sudden glut of Razorcats, one larger alpha.
+
+static func _hungry_pack_start(world: World) -> void:
+	var ed: WorldEventData = EventDB.get_event("hungry_pack")
+	var spawned: Array = []
+	for i in range(int(ed.params.get("extra_razorcats", 5))):
+		var before: Array = world.creatures_by_id.keys()
+		world._spawn_wildlife("predator", "razorcat")
+		spawned.append_array(_new_ids(before, world.creatures_by_id.keys()))
+	if ed.params.get("alpha", false):
+		var before: Array = world.creatures_by_id.keys()
+		world._spawn_wildlife("predator", "razorcat")
+		var new_ids: Array = _new_ids(before, world.creatures_by_id.keys())
+		if not new_ids.is_empty():
+			var alpha: Creature = world.creatures_by_id.get(new_ids[0])
+			if alpha:
+				alpha.stats.max_hp += 40.0
+				alpha.stats.hp = alpha.stats.max_hp
+				alpha.stats.mass += 0.5
+				alpha.stats.bite_damage += 4.0
+			spawned.append(new_ids[0])
+	world.event_data["hungry_pack_spawned"] = spawned
+
+static func _hungry_pack_end(world: World) -> void:
+	var spawned: Array = world.event_data.get("hungry_pack_spawned", [])
+	for id in spawned:
+		if world.creatures_by_id.has(id):
+			world._broadcast_despawn_creature(id)
+	world.event_data.erase("hungry_pack_spawned")

@@ -66,6 +66,8 @@ func _maybe_run_cli_autopilot() -> void:
 					_test_grab()
 				elif e == "--testdeathrepro":
 					_test_death_reproduce()
+				elif e == "--testnarrative":
+					_test_narrative()
 		elif arg.begins_with("--autojoin="):
 			# Supports both host:lineage (default port) and
 			# host:port:lineage, matching the interactive Join field's
@@ -163,6 +165,33 @@ func _test_spit() -> void:
 	print("[test] projectiles_by_id after fire+settle: %s" % [world.projectiles_by_id.keys()])
 	if target and is_instance_valid(target):
 		print("[test] target hp_after=%.1f poisoned=%s" % [target.stats.hp, target.status.poison_time > 0.0])
+
+## Test-only: verify the v0.3 Dead Giant discovery chain, the Ancestral
+## Insight unlock, and that the hidden mutation becomes eligible.
+func _test_narrative() -> void:
+	await get_tree().create_timer(2.0).timeout
+	if my_creature == null:
+		return
+	# Find the Dead Giant landmark.
+	var giant = null
+	for o in world.objects_by_id.values():
+		if o.kind == "dead_giant":
+			giant = o
+			break
+	if giant == null:
+		print("[test] ERROR: no dead_giant landmark generated")
+		return
+	my_creature.global_position = giant.global_position
+	# Grant everything needed to access every clue and the body plan for
+	# the hidden mutation, then press E five times to exhaust the chain.
+	for m in ["keen_smell", "digging_claws", "jaws", "climbing_claws", "long_jumper"]:
+		my_creature.add_mutation(m)
+	for i in range(5):
+		world.rpc_request_eat()
+		await get_tree().create_timer(0.2).timeout
+	print("[test] discovered_clues=%s" % [NarrativeDB.discovered_clues])
+	print("[test] unlocked_insights=%s" % [NarrativeDB.unlocked_insights])
+	print("[test] eligible_hidden=%s" % [NarrativeDB.eligible_hidden_mutations(my_creature)])
 
 ## Test-only: verify Predatory Talons' combo stacking by biting the same
 ## nearby target three times in a row and confirming increasing damage.
@@ -348,6 +377,7 @@ func _spawn_world() -> void:
 	world = WorldScene.instantiate()
 	add_child(world)
 	world.player_died.connect(_on_player_died)
+	world.discovery_made.connect(_on_discovery_made)
 	world.mutation_draft_offered.connect(_on_mutation_draft_offered)
 	world.event_state_changed.connect(_on_event_state_changed)
 	world.local_player_ready.connect(_on_local_player_ready)
@@ -372,6 +402,11 @@ func _on_lineage_chosen(lineage_id: String) -> void:
 func _on_local_player_ready(c: Creature) -> void:
 	my_creature = c
 	_spectating = false
+
+func _on_discovery_made(text: String) -> void:
+	ui.event_label.text = "ANCESTRAL DISCOVERY\n%s" % text
+	ui.event_label.visible = true
+	get_tree().create_timer(6.0).timeout.connect(func(): if is_instance_valid(ui): ui.event_label.visible = false)
 
 func _on_player_died(entity_id: int) -> void:
 	if my_creature and is_instance_valid(my_creature) and my_creature.entity_id == entity_id:

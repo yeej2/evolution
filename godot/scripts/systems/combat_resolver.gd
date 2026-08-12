@@ -104,6 +104,7 @@ static func resolve_bite(attacker: Creature, target: Creature, mult: float = 1.0
 	var kb: float = (dmg / maxf(target.stats.mass, 0.1)) * 0.6
 	kb *= attacker.mutation.mult_value(EffectKeys.KNOCKBACK_MULT, 1.0)
 	kb *= knockback_mult
+	kb *= target.mutation.max_value(EffectKeys.KNOCKBACK_TAKEN_MULT, 1.0)
 	target.knockback_impulse += away * kb
 
 	return {
