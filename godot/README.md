@@ -191,6 +191,30 @@ evolved a combat archetype - see below.
     ask. The core fantasy and controls are real and complete; more
     branches (Quill Volley, Great Scythe, Impale/Drag, hybrids like
     Canopy Hunter) are a natural follow-up once these are playtested.
+- **FEEL + INTERACTION update.** Different *controls* became different
+  *problems* - the same enemy or world object now behaves differently
+  depending on what you evolved:
+  - **Death -> Reproduction fixed.** The dead creature was despawned
+    before the reproduce RPC could use it. Now the server stashes the
+    needed state and reproduction works after dying, not just migration.
+  - **Spitter gets a Venom Reserve.** Shots cost 25 venom; reserve
+    regenerates slowly; eating poisonous food refills 40. Biome-specific
+    poisonous berry spawn rates make Spitter better or worse in different
+    ecosystems (Dry 3%, Lush 15%, Flooded 45%, Ancient 25%).
+  - **Ravager combo is now fragile.** Taking a hit from anything resets
+    the combo immediately, not just on timeout - so tunnel-visioning one
+    Razorcat while another flanks you is punished.
+  - **Behemoth has enemy-specific answers.** Grabbed Shellbacks flip and
+    lose their frontal armor for the Behemoth; a charging Great Horn can
+    be braced and redirected; a throw can bowl into another Razorcat.
+  - **Behemoth shoves the world by mass.** With no grab target, Space
+    shoves the nearest solid: logs at mass 1.0+, rocks at 2.0+, trees
+    at 3.0+. Growing physically larger genuinely expands what you can
+    manipulate.
+  - **Apex presentation.** A charging Great Horn now has a replicated
+    `FLAG_APEX_CHARGING` client flag. Nearby players get a proximity
+    camera shake and a brief "DANGER" cue; nearby prey and predators
+    also flee from it, so the *ecosystem* tells you it's dangerous.
 - **Snapshot format changed again** (added `ep`/`ep_next`/`special_cooldown`
   replication) - as always, both host and joiners need to be on the same
   build or `rpc_snapshot` will throw an index-out-of-bounds trying to read

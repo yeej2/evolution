@@ -419,3 +419,65 @@ mutation ("wings"), with brute-force alternatives for everyone else
 than everything in 9.6/9.7/9.8 - implies a new terrain kind and movement
 mode (flight), not just a new bypass rule on an existing solid object.
 
+### 9.10 FEEL + INTERACTION update — Built
+
+The previous pass gave the three archetypes different *controls*. This
+pass made the same enemies and the same world feel different depending
+on which archetype you actually became, and finished the multiplayer
+lifecycle death->reproduce bug that was blocking real runs.
+
+- **Death -> Reproduction actually works.** The dead creature was
+  despawned before the reproduce RPC could read its state. Now
+  `_on_creature_died()` stashes `{lineage_id, mass, mutations,
+  generation}` keyed by peer id, and `rpc_request_reproduce()` uses that
+  stashed state when no live creature exists. So "I died" is no longer
+  game-over - it's "keep the species alive so I can come back."
+- **Spitter: Venom Reserve.** Ranged shots now drain 25 stored venom;
+  venom passively regenerates slowly (4/s); eating poisonous food gives
+  a large refill (40). `projectile_gland` adds +50 capacity. Poisonous
+  berry spawn chance is biome-specific (Dry 3%, Lush 15%, Flooded 45%,
+  Ancient 25%), so Spitter really isn't equally optimal everywhere.
+- **Ravager: commitment and flanking pressure.** Combo chains now reset
+  the instant the Ravager takes a hit from anything - not just on a
+  timeout. A frontal bite on a Shellback with hardshell retaliation will
+  zero the combo; you have to flank to keep stacking.
+- **Behemoth: enemy-specific interactions.**
+  - *Shellback*: a grabbed hardshell target is flipped (`is_flipped`)
+    while held; the grabber's own bites bypass the frontal armor and
+    deal +50% damage while the target is upended.
+  - *Great Horn*: you can't grab something that heavy, but if it is
+    currently charging and you press Space in its path, the Behemoth
+    braces and redirects the charge - the Horn takes a shove, gets
+    stunned for 2s, and its AI state resets to an 8-second Search.
+  - *Razorcat pack*: a throw resolves a bowling splash in a forward
+    cone; if it overlaps another cat, that cat takes damage and a stun.
+- **Behemoth: mass-tiered environment shove.** Pressing Space with no
+  creature to grab now shoves the nearest solid object: logs at mass
+  1.0+, rocks at 2.0+, trees at 3.0+. Bigger Behemoths physically
+  reshape more of the world.
+- **Apex presentation.** The charging apex now has a snapshot flag
+  (`FLAG_APEX_CHARGING`) replicated to all clients. Clients use it for
+  a proximity-based camera shake and a brief "DANGER" HUD cue. The
+  wildlife AI also checks `_flee_from_apex()` for all prey/predators,
+  so when a Great Horn charges, the whole food web scatters - not just
+  its direct target.
+- **Telemetry is running.** Every death/migration/reproduction already
+  logs `biome, world_seed, lineage, generation, outcome, mutations,
+  mass, distance_traveled, apex_killed, near_landmark`. After ~20-30
+  real runs the `user://telemetry.jsonl` file can answer whether Dry
+  Forest players evolve differently from Flooded Forest players, which
+  mutations dominate, and whether Great Horn kills are disproportionate.
+
+**Honest limitations / scope notes:**
+- Apex audio (music drop, heavy footsteps, heartbeat, impact sounds)
+  is not built - there are no sound assets yet.
+- Apex "environmental dust kick-up" and "birds/prey flee" are the same
+  system: wildlife flee. No dedicated dust/leaf particles.
+- Spitter venom is shown in the hint text, not a dedicated bar - the
+  bar can come once the feel is confirmed.
+- Behemoth object shove uses `burned` on trees to make them passable,
+  since "felled" doesn't exist. It's functionally correct but the
+  terminology/visual is a placeholder.
+- The three archetypes still each have one mutation path, not the full
+  branching trees or hybrids described in the original ask.
+

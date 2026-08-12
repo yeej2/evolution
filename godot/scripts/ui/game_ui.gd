@@ -147,8 +147,17 @@ func update_hud(c: Creature, world: World) -> void:
 	else:
 		hud_labels["special"].visible = false
 
-	if c.mutation.has_flag(EffectKeys.RANGED_ATTACK) and c.aiming:
-		hud_labels["hint"].text = "Aiming - Space to fire, release RMB to stop."
+	var nearest_apex_danger := INF
+	for c2 in world.creatures_by_id.values():
+		if c2.apex_charging:
+			var d: float = c.global_position.distance_to(c2.global_position)
+			if d < nearest_apex_danger:
+				nearest_apex_danger = d
+	if nearest_apex_danger < 160.0:
+		hud_labels["hint"].text = "DANGER"
+	elif c.mutation.has_flag(EffectKeys.RANGED_ATTACK) and c.aiming:
+		var venom_max: float = c.venom_max + c.mutation.max_value(EffectKeys.VENOM_MAX_ADD, 0.0)
+		hud_labels["hint"].text = "Aiming - Venom %d/%d, Space to fire (poison food refills)." % [int(c.venom), int(venom_max)]
 	elif c.mutation.has_flag(EffectKeys.COMBO_ATTACK) and c.combo_count > 0:
 		hud_labels["hint"].text = "Combo x%d (+%d%% damage) - keep chaining bites within 1.5s." % [c.combo_count + 1, c.combo_count * 15]
 	elif c.mutation.has_flag(EffectKeys.GRAB_ATTACK) and c.grab_target_id != -1:

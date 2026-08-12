@@ -52,6 +52,7 @@ var event_data: Dictionary = {}
 var predator_surge_active: bool = false
 
 var projectiles_by_id: Dictionary = {} ## int -> Projectile
+var _dead_reproduce_state: Dictionary = {} ## peer_id -> {lineage_id, mass, mutations, generation} - see rpc_request_reproduce()
 var _next_projectile_id: int = 1
 var _next_food_id: int = 1000
 var _seen_initial_food_ids: Array = []
@@ -338,6 +339,19 @@ func _on_creature_died(c: Creature) -> void:
 	_broadcast_spawn_food(carcass_id, "carcass", c.global_position.x, c.global_position.y, carcass_amount, 12.0, Color("8b5a2b"), false, fresh, false)
 	if c.is_player:
 		_log_telemetry(c, "died")
+		# Real bug, not just a design gap: reproduce previously only ever
+		# worked after a migration win, because _creature_for_sender()
+		# can't find a creature that's already been despawned - and death
+		# always despawned before the reproduce screen even appeared. This
+		# is the one place a dying player's state still exists to capture
+		# it, so rpc_request_reproduce() can use it even though the
+		# Creature object itself won't exist by the time that RPC arrives.
+		_dead_reproduce_state[c.owner_peer_id] = {
+			"lineage_id": c.lineage_id,
+			"mass": c.stats.mass,
+			"mutations": c.mutation.owned.duplicate(),
+			"generation": c.generation,
+		}
 		_announce_player_died(c.entity_id)
 		_broadcast_despawn_creature(c.entity_id)
 	else:
@@ -382,6 +396,9 @@ const PROJECTILE_SPEED := 360.0
 const PROJECTILE_LIFETIME := 1.4
 const PROJECTILE_DAMAGE := 9.0
 const PROJECTILE_POISON := 3.5
+const VENOM_COST := 25.0
+const VENOM_REGEN := 4.0  ## per second
+const VENOM_EAT_RESTORE := 40.0
 
 ## Spitter: fires while aiming (RMB held client-side, see main.gd) instead
 ## of biting - shares bite_cooldown with melee since it's still "the
@@ -394,6 +411,13 @@ func rpc_request_fire() -> void:
 	var c := _creature_for_sender()
 	if c == null or c.dead or c.bite_cooldown > 0.0 or not c.mutation.has_flag(EffectKeys.RANGED_ATTACK):
 		return
+	# Spitter biology is a finite resource, not infinite bullets. We drain
+	# reserve on fire; reserve regens slowly and refills from eating
+	# poisonous food. `venom_max` can grow from certain mutations.
+	var vm: float = c.venom_max + c.mutation.max_value(EffectKeys.VENOM_MAX_ADD, 0.0)
+	if c.venom < VENOM_COST:
+		return
+	c.venom -= VENOM_COST
 	c.bite_cooldown = 0.5
 	var dir := Vector2.RIGHT.rotated(c.aim_angle)
 	var id := _next_projectile_id
@@ -424,11 +448,42 @@ func rpc_request_grab() -> void:
 			held.stats.hp -= CRUSH_DAMAGE
 			held.last_attacker_id = c.entity_id
 			held.last_hit_time = 4.0
+			CombatResolver._break_combo(held)
 		return
 	var target := _nearest_bite_target(c, GRAB_RANGE)
-	if target and target.grabbed_by_id == -1 and target.stats.mass <= c.stats.mass * GRAB_MASS_CAP_MULT:
-		target.grabbed_by_id = c.entity_id
-		c.grab_target_id = target.entity_id
+	if target and target.grabbed_by_id == -1:
+		# Great Horn counter: you can't grab something that much heavier,
+		# but if it is currently charging you can brace and redirect the
+		# charge - the Behemoth becomes a wall that the apex bounces off.
+		if target.species_data and target.species_data.id == "great_horn" and target.stats.mass > c.stats.mass * GRAB_MASS_CAP_MULT:
+			var st := WildlifeAI._apex_state(target)
+			if st["state"] == "charge" or st["state"] == "pursue":
+				var shove := (c.global_position - target.global_position).normalized() * 600.0
+				target.knockback_impulse = shove
+				target.status.apply_stun(2.0)
+				target.stats.hp -= 8.0
+				target.last_attacker_id = c.entity_id
+				target.last_hit_time = 4.0
+				CombatResolver._break_combo(target)
+				st["state"] = "search"
+				st["timer"] = 8.0
+				st["last_seen"] = target.global_position
+				return
+		if target.stats.mass <= c.stats.mass * GRAB_MASS_CAP_MULT:
+			target.grabbed_by_id = c.entity_id
+			c.grab_target_id = target.entity_id
+			# Flip the Shellback: once held, frontal shell armor is useless
+			# because the hard side is on the ground. Only the Behemoth who
+			# flipped it exploits this - other attackers don't benefit.
+			if target.species_data and target.species_data.frontal_armor > 0.0:
+				target.is_flipped = true
+			return
+	# Nothing to grab - use the same Space press to shove the environment.
+	# Mass gates this directly: larger Behemoths can reshape more of the world.
+	_behemoth_shove(c)
+
+const THROW_SPLASH_DAMAGE := 6.0
+const THROW_SPLASH_RANGE := 64.0
 
 ## Throw: launches whatever you're holding in your aim direction - into
 ## water, into a Wildfire front, into a rock, into another predator. The
@@ -445,11 +500,61 @@ func rpc_request_throw() -> void:
 	if target == null:
 		return
 	target.grabbed_by_id = -1
+	target.is_flipped = false
 	var dir := Vector2.RIGHT.rotated(c.aim_angle)
 	target.knockback_impulse = dir * THROW_FORCE
 	target.stats.hp -= THROW_DAMAGE
 	target.last_attacker_id = c.entity_id
 	target.last_hit_time = 4.0
+	CombatResolver._break_combo(target)
+	# Throw into another cat: the target is a bowling ball for one frame.
+	# We resolve any other creature in the launch cone as a hit now, so the
+	# server doesn't have to track a moving collision volume per tick.
+	for other in creatures_by_id.values():
+		if other == c or other == target or other.dead or other.refuge_time > 0.0:
+			continue
+		var to_other: Vector2 = other.global_position - target.global_position
+		var d: float = to_other.length()
+		if d > THROW_SPLASH_RANGE + target.stats.radius + other.stats.radius:
+			continue
+		if d < 0.1:
+			continue
+		if dir.dot(to_other.normalized()) > 0.78:
+			other.stats.hp -= THROW_SPLASH_DAMAGE
+			other.status.apply_stun(1.0)
+			other.knockback_impulse = dir * THROW_FORCE * 0.5
+			other.last_attacker_id = c.entity_id
+			other.last_hit_time = 4.0
+			CombatResolver._break_combo(other)
+
+func _behemoth_shove(c: Creature) -> void:
+	if not c.mutation.has_flag(EffectKeys.GRAB_ATTACK):
+		return
+	# Tiny (mass < 1.0) can't even move a log. From there, bigger bodies
+	# can reshape progressively more of the environment - the payoff for
+	# getting physically larger is direct physical power.
+	var reach := c.stats.radius + GRAB_RANGE
+	for o in objects_by_id.values():
+		if c.global_position.distance_to(o.global_position) > reach + o.radius:
+			continue
+		if o.kind == "log" and not o.open:
+			if c.stats.mass >= 1.0:
+				o.open = true
+				_broadcast_update_object(o.object_id, "open", true)
+				return
+		if o.kind == "rock" and not o.broken:
+			if c.stats.mass >= 2.0:
+				o.rock_hp -= c.stats.mass * 15.0
+				o.queue_redraw()
+				if o.rock_hp <= 0.0:
+					o.broken = true
+					_broadcast_update_object(o.object_id, "broken", true)
+				return
+		if o.kind == "tree" and not o.burned:
+			if c.stats.mass >= 3.0:
+				o.burned = true
+				_broadcast_update_object(o.object_id, "burned", true)
+				return
 
 ## Strong Jaws' whole point is a real, permanent way through an obstacle
 ## that isn't available to everyone - a rock only cracks under a bite from
@@ -651,20 +756,45 @@ func rpc_migrate_rejected() -> void:
 func rpc_request_reproduce(inherit_mutation_id: String) -> void:
 	if not _is_authority():
 		return
+	var peer_id := multiplayer.get_remote_sender_id()
+	if peer_id == 0:
+		peer_id = multiplayer.get_unique_id() if multiplayer.multiplayer_peer else 1
+
+	# Two valid paths in here: migrated (creature is still alive, never
+	# despawned - can_migrate() re-validates the same way it always did)
+	# or died (creature is gone, but _on_creature_died() stashed what's
+	# needed to reproduce from before despawning it).
+	var lineage_id: String
+	var prior_mass: float
+	var owned_mutations: Array
+	var new_gen: int
 	var c := _creature_for_sender()
-	if c == null or not c.can_migrate():
+	if c != null and c.can_migrate():
+		lineage_id = c.lineage_id
+		prior_mass = c.stats.mass
+		owned_mutations = c.mutation.owned
+		new_gen = c.generation + 1
+	elif _dead_reproduce_state.has(peer_id):
+		var st: Dictionary = _dead_reproduce_state[peer_id]
+		lineage_id = st["lineage_id"]
+		prior_mass = st["mass"]
+		owned_mutations = st["mutations"]
+		new_gen = int(st["generation"]) + 1
+	else:
 		return
+
 	# Without this, a client could hand back a mutation id it never
 	# actually owned and have the offspring spawn with it anyway.
-	if inherit_mutation_id != "" and not c.mutation.has(inherit_mutation_id):
+	if inherit_mutation_id != "" and not owned_mutations.has(inherit_mutation_id):
 		return
-	_log_telemetry(c, "reproduced")
-	var peer_id := multiplayer.get_remote_sender_id()
-	var prior_mass := c.stats.mass
-	var lineage_id := c.lineage_id
-	var new_gen := c.generation + 1
+
+	_dead_reproduce_state.erase(peer_id)
+	var telemetry_c := c if c != null else null
+	if telemetry_c:
+		_log_telemetry(telemetry_c, "reproduced")
 	gen_factor += 0.15
-	_broadcast_despawn_creature(c.entity_id)
+	if c != null:
+		_broadcast_despawn_creature(c.entity_id)
 	var id := NetworkManager.allocate_entity_id()
 	peer_to_entity[peer_id] = id
 	_broadcast_spawn_creature(id, true, lineage_id, peer_id, new_gen)
@@ -759,6 +889,11 @@ func consume_food_by_creature(f: FoodItem, c: Creature) -> void:
 			c.status.apply_poison(4.0, -1)
 		if float(result["self_poison"]) > 0.0 and not c.mutation.has_flag(EffectKeys.POISON_IMMUNE):
 			c.status.apply_poison(float(result["self_poison"]), -1)
+		# Spitter: eating poison is a real tactical refill, not just free ammo.
+		# Without the mutation it's just dangerous; with it, it's a reload.
+		if f.poisonous and c.mutation.has_flag(EffectKeys.RANGED_ATTACK):
+			var vm: float = c.venom_max + c.mutation.max_value(EffectKeys.VENOM_MAX_ADD, 0.0)
+			c.venom = minf(c.venom + VENOM_EAT_RESTORE, vm)
 		c.ep += 5.0 if f.kind == "berry" else 12.0
 		if c.ep >= c.ep_next:
 			c.ep = 0.0
@@ -785,7 +920,16 @@ func _eat_bush_cluster(origin: FoodItem, c: Creature) -> void:
 func _spawn_berry(x: float, y: float) -> void:
 	var id := _next_food_id
 	_next_food_id += 1
-	_broadcast_spawn_food(id, "berry", x, y, 22.0, 6.0, Color("4abf4a"), false, false, false)
+	# Ecosystem matters to the Spitter: some biomes are venom-poor, others
+	# venom-rich. Poisonous berries are the Spitter's "reload" stations.
+	var poisonous_chance := 0.08
+	match biome_id:
+		"forest_dry": poisonous_chance = 0.03
+		"forest_lush": poisonous_chance = 0.15
+		"forest_flooded": poisonous_chance = 0.45
+		"forest_ancient": poisonous_chance = 0.25
+	var poisonous := rng.randf() < poisonous_chance
+	_broadcast_spawn_food(id, "berry", x, y, 22.0, 6.0, Color("4abf4a"), false, false, poisonous)
 
 func _broadcast_spawn_food(id: int, kind: String, x: float, y: float, amount: float, radius: float, color: Color, cooked: bool, fresh_kill: bool, poisonous: bool) -> void:
 	_spawn_food_local(id, kind, x, y, amount, radius, color, cooked, fresh_kill, poisonous)
@@ -937,6 +1081,9 @@ func _physics_process(delta: float) -> void:
 		if c.is_player and not c.dead and _creature_near_nest(c):
 			c.stats.hp = minf(c.stats.max_hp, c.stats.hp + NEST_REGEN_PER_SEC * delta)
 		c.process_server_tick(delta)
+		if c.mutation.has_flag(EffectKeys.RANGED_ATTACK) and not c.dead:
+			var vm: float = c.venom_max + c.mutation.max_value(EffectKeys.VENOM_MAX_ADD, 0.0)
+			c.venom = minf(c.venom + VENOM_REGEN * c.mutation.max_value(EffectKeys.VENOM_REGEN_MULT, 1.0) * delta, vm)
 		if c.is_player and c.pounce_time > 0.0 and not c.dead:
 			_check_pounce_hits(c, delta)
 		if not c.is_player and not c.dead:
@@ -949,6 +1096,7 @@ func _physics_process(delta: float) -> void:
 			else:
 				if held:
 					held.grabbed_by_id = -1
+					held.is_flipped = false
 				c.grab_target_id = -1
 	if not _is_authority():
 		return
@@ -986,6 +1134,7 @@ func _resolve_projectile_hit(owner_id: int, target: Creature) -> void:
 	target.stats.hp -= PROJECTILE_DAMAGE
 	target.last_attacker_id = owner_id
 	target.last_hit_time = 4.0
+	CombatResolver._break_combo(target)
 	if not target.mutation.has_flag(EffectKeys.POISON_IMMUNE):
 		target.status.apply_poison(PROJECTILE_POISON, owner_id)
 
@@ -1075,6 +1224,7 @@ func rpc_snapshot(core: Array, extended: Array) -> void:
 		c.status.stun_time = 1.0 if (flags & Creature.FLAG_STUNNED) != 0 else 0.0
 		c.status.poison_time = 1.0 if (flags & Creature.FLAG_POISONED) != 0 else 0.0
 		c.status.bleed_time = 1.0 if (flags & Creature.FLAG_BLEEDING) != 0 else 0.0
+		c.apex_charging = (flags & Creature.FLAG_APEX_CHARGING) != 0
 		c.telegraph = entry[7]
 	for entry in extended:
 		var c: Creature = creatures_by_id.get(int(entry[0]))
@@ -1098,6 +1248,7 @@ func rpc_snapshot(core: Array, extended: Array) -> void:
 		c.refuge_type = entry[16]
 		c.combo_count = entry[17]
 		c.grab_target_id = entry[18]
+		c.venom = entry[19]
 	if not extended.is_empty():
 		hud_refresh.emit()
 

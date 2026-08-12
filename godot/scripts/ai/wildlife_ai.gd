@@ -74,9 +74,23 @@ static func _in_water(c: Creature, world: Node) -> bool:
 			return true
 	return false
 
+const APEX_PANIC_RADIUS := 260.0
+
+static func _flee_from_apex(c: Creature, world: Node) -> bool:
+	for other in world.creatures_by_id.values():
+		if other == c or other.dead or not other.species_data or other.species_data.creature_type != "apex":
+			continue
+		var st := _apex_state(other)
+		if st["state"] in ["charge", "pursue"] and c.global_position.distance_to(other.global_position) < APEX_PANIC_RADIUS:
+			c.velocity = (c.global_position - other.global_position).normalized() * c.stats.speed * 1.5
+			return true
+	return false
+
 # --- prey ---
 
 static func _process_prey(c: Creature, world: Node, delta: float) -> void:
+	if _flee_from_apex(c, world):
+		return
 	var players: Array = world.get_player_creatures()
 	var nearest_player: Creature = _nearest(c, players, 999999.0) as Creature
 	var dplayer := nearest_player.global_position.distance_to(c.global_position) if nearest_player else 999999.0
@@ -144,6 +158,8 @@ static func _wander_dir(c: Creature, delta: float, world: Node = null) -> Vector
 # --- predators ---
 
 static func _process_predator(c: Creature, world: Node, delta: float) -> void:
+	if _flee_from_apex(c, world):
+		return
 	if c.telegraph > 0.0:
 		c.telegraph -= delta
 		if c.telegraph <= 0.0:

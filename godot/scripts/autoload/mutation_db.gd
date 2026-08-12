@@ -250,8 +250,8 @@ func _build() -> void:
 		[], [], {EffectKeys.POISON_ON_HIT: 2.0})
 	_def("projectile_gland", "Projectile Gland", "Offense", "spitter", 2,
 		"The gland grows a firing duct. You are now, functionally, a gun.",
-		"RMB aim, Space fire: spit venom at range, poisons on hit", "Melee bite damage -20%",
-		["venom_gland"], [], {EffectKeys.RANGED_ATTACK: true, EffectKeys.BITE_DAMAGE_ADD: -2.0})
+		"RMB aim, Space fire: spit venom at range, poisons on hit; venom reserve +50", "Melee bite damage -20%",
+		["venom_gland"], [], {EffectKeys.RANGED_ATTACK: true, EffectKeys.BITE_DAMAGE_ADD: -2.0, EffectKeys.VENOM_MAX_ADD: 50.0})
 
 	_def("rending_claws", "Rending Claws", "Offense", "ravager", 1,
 		"Claws sharpen into something built for tearing, not just gripping.",

@@ -41,7 +41,11 @@ var combo_count: int = 0 ## Ravager: consecutive chained bites
 var combo_timer: float = 0.0
 var grabbed_by_id: int = -1 ## Behemoth target-side: entity_id of whoever is holding me (immobilized)
 var grab_target_id: int = -1 ## Behemoth attacker-side: entity_id of who I'm holding
+var apex_charging: bool = false ## client-side: set from snapshot flags when an apex is in charge/pursue
 var aiming: bool = false ## Spitter: RMB held
+var is_flipped: bool = false ## Behemoth: grabbed hardshell target is exposed for easy bites
+var venom: float = 0.0     ## Spitter: stored venom available for ranged shots
+var venom_max: float = 100.0 ## base; mutations add via EffectKeys.VENOM_MAX_ADD
 
 # Refuge ("escape interactions" - climb a tree, burrow, take shelter): a
 # temporary, immobile, imperceptible-to-wildlife state. See World.gd's
@@ -320,8 +324,7 @@ const FLAG_HIDDEN := 1
 const FLAG_STUNNED := 2
 const FLAG_POISONED := 4
 const FLAG_BLEEDING := 8
-
-## Positional (not Dictionary) snapshot format - avoids repeating key name
+const FLAG_APEX_CHARGING := 16 ## client-side panic presentation: Great Horn is in charge/pursue
 ## strings for every creature on every packet, which was the main reason a
 ## ~13-creature snapshot was blowing past the ENet MTU and getting dropped.
 ## [id, x, y, facing, hp, max_hp, flags, telegraph]
@@ -335,9 +338,13 @@ func to_snapshot_core() -> Array:
 		flags |= FLAG_POISONED
 	if status.bleed_time > 0.0:
 		flags |= FLAG_BLEEDING
+	if species_data and species_data.creature_type == "apex":
+		var st = WildlifeAI._apex_state(self)
+		if st["state"] in ["charge", "pursue"]:
+			flags |= FLAG_APEX_CHARGING
 	return [entity_id, global_position.x, global_position.y, facing, stats.hp, stats.max_hp, flags, telegraph]
 
 ## Slow-changing player-only fields, broadcast at a much lower rate.
-## [id, mass, speed, mutations, generation, hunger, energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next, refuge_time, refuge_type, combo_count, grab_target_id]
+## [id, mass, speed, mutations, generation, hunger, energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next, refuge_time, refuge_type, combo_count, grab_target_id, venom]
 func to_snapshot_extended() -> Array:
-	return [entity_id, stats.mass, stats.speed, mutation.owned.duplicate(), generation, hunger.hunger, hunger.energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next, refuge_time, refuge_type, combo_count, grab_target_id]
+	return [entity_id, stats.mass, stats.speed, mutation.owned.duplicate(), generation, hunger.hunger, hunger.energy, apex_killed, distance_traveled, touched_water, survived_drought, survived_wildfire, special_cooldown, ep, ep_next, refuge_time, refuge_type, combo_count, grab_target_id, venom]

@@ -5,6 +5,12 @@ class_name CombatResolver
 ## calls; clients never run it, they only render the results the server
 ## broadcasts (hp changes, particles, status effects) via Creature RPCs.
 
+static func _break_combo(c: Creature) -> void:
+	## Ravager takes a hit while building momentum: chain resets.
+	if c.mutation.has_flag(EffectKeys.COMBO_ATTACK):
+		c.combo_count = 0
+		c.combo_timer = 0.0
+
 static func resolve_bite(attacker: Creature, target: Creature, mult: float = 1.0, knockback_mult: float = 1.0) -> Dictionary:
 	if target.status.iframe_time > 0.0:
 		return {}
@@ -50,12 +56,17 @@ static func resolve_bite(attacker: Creature, target: Creature, mult: float = 1.0
 	var attacking_from_rear := dot < -0.4
 	var retaliation_dmg := 0.0
 	if target.species_data:
-		if dot > 0.0 and target.species_data.frontal_armor > 0.0:
+		# Behemoth flip: a grabbed target with a hardshell is held belly-up
+		# by the grabber, so only the grabber bypasses that frontal armor.
+		var flipped_by_attacker: bool = target.is_flipped and target.grabbed_by_id == attacker.entity_id
+		if dot > 0.0 and target.species_data.frontal_armor > 0.0 and not flipped_by_attacker:
 			dmg *= (1.0 - target.species_data.frontal_armor)
 			if target.species_data.frontal_retaliation:
 				retaliation_dmg = 5.0
 		elif attacking_from_rear and target.species_data.rear_damage_bonus > 0.0:
 			dmg *= (1.0 + target.species_data.rear_damage_bonus)
+		elif flipped_by_attacker:
+			dmg *= 1.5
 
 	# Predatory Talons (Ravager): chaining bites within combo_timer's window
 	# stacks bonus damage, and catching something from behind - a player
@@ -80,8 +91,10 @@ static func resolve_bite(attacker: Creature, target: Creature, mult: float = 1.0
 	target.stats.hp -= dmg
 	target.last_attacker_id = attacker.entity_id
 	target.last_hit_time = 4.0 # apex provocation + pack alarm both read this ("was I just attacked")
+	_break_combo(target)
 	if retaliation_dmg > 0.0:
 		attacker.stats.hp -= retaliation_dmg
+		_break_combo(attacker)
 
 	# knockback
 	var away: Vector2 = (target.global_position - attacker.global_position)

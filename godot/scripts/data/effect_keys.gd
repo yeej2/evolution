@@ -60,6 +60,10 @@ const COOKED_CARCASS_RESTORE_MULT := "cooked_carcass_restore_mult"
 # Fire / environment resistance
 const FIRE_IMMUNE := "fire_immune"
 
+# Spitter venom reserve
+const VENOM_MAX_ADD := "venom_max_add"     ## +reserve capacity (e.g. larger gland)
+const VENOM_REGEN_MULT := "venom_regen_mult" ## multiplies passive regen rate
+
 # Combat archetypes (World.gd/main.gd) - these gate entirely different
 # control schemes, not stat tweaks. Evolving into one changes what your
 # mouse buttons actually do; see main.gd's _unhandled_input and

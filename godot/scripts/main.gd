@@ -40,6 +40,8 @@ func _ready() -> void:
 ## layer without a human clicking buttons: `--autohost=stalker` or
 ## `--autojoin=127.0.0.1:grazer`. Not used by the normal interactive flow.
 func _maybe_run_cli_autopilot() -> void:
+
+
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--autohost="):
 			var lineage := arg.split("=")[1]
@@ -62,6 +64,8 @@ func _maybe_run_cli_autopilot() -> void:
 					_test_combo()
 				elif e == "--testgrab":
 					_test_grab()
+				elif e == "--testdeathrepro":
+					_test_death_reproduce()
 		elif arg.begins_with("--autojoin="):
 			# Supports both host:lineage (default port) and
 			# host:port:lineage, matching the interactive Join field's
@@ -136,6 +140,9 @@ func _test_spit() -> void:
 		return
 	my_creature.add_mutation("venom_gland")
 	my_creature.add_mutation("projectile_gland")
+	# Seed venom so the test can fire immediately (normal gameplay would
+	# need regen or poisonous food).
+	my_creature.venom = 100.0
 	# Aim directly at the nearest wildlife creature so a hit is
 	# deterministic to verify, not left to chance.
 	var target: Creature = null
@@ -183,6 +190,47 @@ func _test_combo() -> void:
 		world.server_resolve_bite(my_creature, target)
 		print("[test] hit %d: combo_count=%d target_hp=%.1f" % [i, my_creature.combo_count, target.stats.hp])
 		await get_tree().create_timer(0.3).timeout
+
+## Test-only: verify death -> reproduce works end-to-end, not just
+## migration. We deliberately kill the local player, wait for the
+## creature to despawn, then call the same reproduce RPC a regular
+## player would send from the game-over screen.
+func _test_death_reproduce() -> void:
+	for i in range(20):
+		if my_creature != null:
+			break
+		await get_tree().create_timer(0.2).timeout
+	if my_creature == null:
+		print("[test] deathrepro: no creature available after 4s")
+		return
+	var starting_mut := my_creature.mutation.owned.duplicate()
+	var starting_mass := my_creature.stats.mass
+	var starting_gen := my_creature.generation
+	my_creature.stats.hp = -1000.0
+	# Server's _physics_process will see hp <= 0, call _on_creature_died(),
+	# which stashes state and despawns. Wait for that.
+	await get_tree().create_timer(1.0).timeout
+	print("[test] after death: my_creature=%s dead_state=%s" % [
+		my_creature, JSON.stringify(world._dead_reproduce_state)
+	])
+	# Must not be referencing a freed object, and the stashed state must exist.
+	assert(my_creature == null, "my_creature should be nulled after death")
+	var peer_id := 1 if multiplayer.multiplayer_peer == null or NetworkManager.is_hosting else multiplayer.get_unique_id()
+	assert(world._dead_reproduce_state.has(peer_id), "dead reproduce state should exist for peer")
+	var inherit: String = starting_mut[0] if not starting_mut.is_empty() else ""
+	world.rpc_request_reproduce(inherit if NetworkManager.is_hosting or multiplayer.multiplayer_peer == null else "")
+	if not NetworkManager.is_hosting and multiplayer.multiplayer_peer != null:
+		world.rpc_request_reproduce.rpc_id(1, inherit)
+	await get_tree().create_timer(1.0).timeout
+	var nc = world._creature_for_sender()
+	assert(nc != null and nc.is_player, "offspring should have spawned")
+	print("[test] reproduce after death: gen %d->%d mass %.1f->%.1f mut=%s" % [
+		starting_gen, nc.generation, starting_mass, nc.stats.mass, nc.mutation.owned
+	])
+	assert(nc.generation == starting_gen + 1, "generation should increment")
+	assert(nc.stats.mass > starting_mass, "mass should inherit and grow")
+	if inherit != "":
+		assert(nc.mutation.has(inherit), "offspring should inherit chosen mutation")
 
 ## Test-only: verify Crushing Grip's full path - grab, crush (damage over
 ## repeated calls), drag (position follows grabber), and throw (knockback
@@ -398,6 +446,21 @@ func _physics_process(_delta: float) -> void:
 		return
 	if camera:
 		camera.global_position = my_creature.global_position
+		# Apex presentation: a charging Great Horn should feel dangerous.
+		# Subtle camera shake scales with proximity; the UI reads DANGER when
+		# it's very close. This is purely client-side cosmetic - the real
+		# panic is the wildlife fleeing all around it (WildlifeAI).
+		var nearest_danger: float = INF
+		for c in world.creatures_by_id.values():
+			if c.apex_charging:
+				var d: float = my_creature.global_position.distance_to(c.global_position)
+				if d < nearest_danger:
+					nearest_danger = d
+					
+		var shake := 0.0
+		if nearest_danger < 360.0:
+			shake = clampf((360.0 - nearest_danger) / 360.0 * 6.0, 0.0, 6.0)
+		camera.offset = Vector2(randf_range(-shake, shake), randf_range(-shake, shake)) if shake > 0.5 else Vector2.ZERO
 	# The host is authority for its own creature and never receives its own
 	# rpc_snapshot broadcast (it's call_remote), so the HUD has to read local
 	# state directly rather than waiting on World's hud_refresh signal.
