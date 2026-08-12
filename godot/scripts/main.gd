@@ -68,6 +68,8 @@ func _maybe_run_cli_autopilot() -> void:
 					_test_death_reproduce()
 				elif e == "--testnarrative":
 					_test_narrative()
+				elif e == "--testrestart":
+					_test_restart()
 		elif arg.begins_with("--autojoin="):
 			# Supports both host:lineage (default port) and
 			# host:port:lineage, matching the interactive Join field's
@@ -193,6 +195,25 @@ func _test_narrative() -> void:
 	print("[test] discovered_clues=%s" % [NarrativeDB.discovered_clues])
 	print("[test] unlocked_insights=%s" % [NarrativeDB.unlocked_insights])
 	print("[test] eligible_hidden=%s" % [NarrativeDB.eligible_hidden_mutations(my_creature)])
+
+## Test-only: force the local player to die, then click Restart and confirm
+## the respawn path actually creates a new my_creature.
+func _test_restart() -> void:
+	await get_tree().create_timer(2.0).timeout
+	if my_creature == null:
+		print("[test] no my_creature yet")
+		return
+	print("[test] killing my_creature hp=%.1f" % my_creature.stats.hp)
+	my_creature.stats.hp = 0.0
+	world._on_creature_died(my_creature)
+	await get_tree().create_timer(1.0).timeout
+	print("[test] gameover_title=%s my_creature_null=%s" % [ui.gameover_title.text, my_creature == null])
+	_on_restart_pressed()
+	await get_tree().create_timer(2.0).timeout
+	if my_creature != null:
+		print("[test] restart succeeded: new my_creature hp=%.1f gen=%d" % [my_creature.stats.hp, my_creature.generation])
+	else:
+		print("[test] restart FAILED: my_creature is still null")
 
 ## Test-only: verify Predatory Talons' combo stacking by biting the same
 ## nearby target three times in a row and confirming increasing damage.
@@ -451,7 +472,15 @@ func _on_reproduce_chosen(mutation_id: String) -> void:
 	ui.show_hud()
 
 func _on_restart_pressed() -> void:
-	get_tree().reload_current_scene()
+	# "Restart" should respawn the lineage in the current run, not reload the
+	# entire scene. We treat it the same as reproducing with no inherited
+	# mutation. The same server validation and narrative memory logic runs for
+	# host, client, and single-player.
+	if NetworkManager.is_hosting or multiplayer.multiplayer_peer == null:
+		world.rpc_request_reproduce("")
+	else:
+		world.rpc_request_reproduce.rpc_id(1, "")
+	ui.show_hud()
 
 func _on_event_state_changed(event_id: String, phase: String) -> void:
 	ui.show_event_banner(event_id, phase)
