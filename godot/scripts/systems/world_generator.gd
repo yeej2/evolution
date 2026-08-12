@@ -273,13 +273,20 @@ static func _structured_forest(rng: RandomNumberGenerator, biome_id: String, s: 
 	return built
 
 static func _add_dead_giant(rng: RandomNumberGenerator, built: Dictionary) -> void:
-	var pts: Array = _anchors(rng, 1, 380.0, 240.0)
+	var pts: Array = _anchors(rng, 1, 460.0, 260.0)
 	if pts.is_empty():
 		return
 	var pos: Vector2 = pts[0]
-	var radius: float = 110.0
-	built["placements"].append({"kind": "dead_giant", "pos": pos, "radius": radius, "color": Color.WHITE})
-	built["landmarks"].append({"name": "Dead Giant", "pos": pos, "radius": radius})
+	var bone := Color(0.78, 0.74, 0.66)
+	# A sprawled Firstborn skeleton with multiple distinct physical interaction
+	# points. The player has to actually go to the right bone, not just stand
+	# near one giant object and press E repeatedly.
+	built["placements"].append({"kind": "dead_giant", "pos": pos, "radius": 120.0, "color": bone})
+	built["placements"].append({"kind": "giant_tissue", "pos": pos + Vector2(-110.0, 70.0), "radius": 34.0, "color": Color(0.65, 0.55, 0.45)})
+	built["placements"].append({"kind": "giant_excavation", "pos": pos + Vector2(40.0, 90.0), "radius": 40.0, "color": Color(0.5, 0.45, 0.35)})
+	built["placements"].append({"kind": "giant_femur", "pos": pos + Vector2(-60.0, -80.0), "radius": 42.0, "color": bone})
+	built["placements"].append({"kind": "giant_skull", "pos": pos + Vector2(90.0, -70.0), "radius": 48.0, "color": bone})
+	built["landmarks"].append({"name": "Dead Giant", "pos": pos, "radius": 180.0})
 
 ## Dry Forest: scarcity forces you toward a handful of known, contested
 ## places rather than "water slows me down more often" - one waterhole,

@@ -235,6 +235,26 @@ evolved a combat archetype - see below.
   - **The Hungry Pack Chapter** spawns an extra Razorcat wave plus a
     tougher alpha at the start of the event. It leaves with the event,
     so populations don't ratchet up forever.
+- **v0.3.1 — Ancestral Memory polish.**
+  - **Dead Giant clues are independent after the initial examine.** Each
+    remaining clue is checked separately against the creature's body and
+    the physical bone it is interacting with.
+  - **The Dead Giant is now a real place.** Five distinct physical
+    objects (`giant_tissue`, `giant_excavation`, `giant_femur`,
+    `giant_skull`, and the central `dead_giant`) are spread across the
+    Forest. You discover lore by going to the right bone.
+  - **Authoritative UI for mutation and migration.** The host/single-
+    player no longer bypasses `World` for these actions. `main.gd`
+    always asks `World`, `World` validates, and `World` changes state.
+  - **Ancestral draft reveal.** The first time `Hollow Bones` (or any
+    future hidden mutation) becomes possible, it is guaranteed as a
+    gold-labeled fourth draft card. After the first offer it competes
+    normally with the weighted pool.
+  - **Hungry Pack is now an ecological Chapter.** Prey are scarce,
+    carcasses appear, and killing the chapter alpha records a lineage
+    memory.
+  - **Lineage memories have location context.** Biome, world seed, and
+    nearest landmark are recorded for every memory.
 - **Snapshot format changed again** (added `ep`/`ep_next`/`special_cooldown`
   replication) - as always, both host and joiners need to be on the same
   build or `rpc_snapshot` will throw an index-out-of-bounds trying to read
@@ -258,7 +278,9 @@ evolved a combat archetype - see below.
 	removed from `creatures_by_id` - before the reproduce screen even
 	appears, so it silently only ever worked after a migration win. This
 	contradicts PLAN.md's "death becomes reproduction" design and is a
-	separate, not-yet-fixed follow-up.)
+	separate, not-yet-fixed follow-up. This has since been fixed: the
+    server stashes the dying creature's state before despawn, and
+    `rpc_request_reproduce` uses that stashed state.)
   - `rpc_request_join` never checked that `lineage_id` was real.
   - Grazer's Share Sustenance capped its own cost at 100 hunger but still
 	gave the ally the full fixed benefit - a Grazer already near-starving

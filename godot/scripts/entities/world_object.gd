@@ -118,3 +118,20 @@ func _draw() -> void:
 			draw_circle(Vector2(-radius * 0.6, radius * 0.3), radius * 0.35, Color(bone, 0.7))
 			draw_circle(Vector2(radius * 0.6, -radius * 0.2), radius * 0.28, Color(bone, 0.7))
 			draw_circle(Vector2.ZERO, radius * 0.12, Color(0.2, 0.2, 0.2))
+		"giant_tissue":
+			# Decayed remains - the smell clue.
+			draw_circle(Vector2.ZERO, radius, Color(0.55, 0.45, 0.35, 0.8))
+			draw_circle(Vector2.ZERO, radius * 0.4, Color(0.35, 0.28, 0.22, 0.9))
+		"giant_excavation":
+			# A dug-out patch beneath the ribs.
+			draw_circle(Vector2.ZERO, radius, Color(0.45, 0.4, 0.3))
+			draw_arc(Vector2.ZERO, radius * 0.5, 0.0, TAU, 12, Color(0.25, 0.22, 0.15, 0.7), 2.0)
+		"giant_femur":
+			# A cracked long bone - the Jaws clue.
+			draw_circle(Vector2.ZERO, radius, Color(0.8, 0.75, 0.65))
+			draw_line(Vector2(-radius * 0.6, radius * 0.1), Vector2(radius * 0.5, -radius * 0.2), Color(0.25, 0.22, 0.18), 2.0)
+		"giant_skull":
+			# The elevated skull - the Climbing clue.
+			draw_circle(Vector2.ZERO, radius, Color(0.82, 0.78, 0.7))
+			draw_circle(Vector2(-radius * 0.25, -radius * 0.1), radius * 0.2, Color(0.15, 0.15, 0.15))
+			draw_circle(Vector2(radius * 0.25, -radius * 0.1), radius * 0.2, Color(0.15, 0.15, 0.15))

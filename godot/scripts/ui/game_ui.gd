@@ -65,8 +65,15 @@ func show_mutation_draft(choices: Array) -> void:
 		var m: MutationData = MutationDB.get_mutation(id)
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(180, 100)
-		b.text = "%s\n\n%s\n(%s)" % [m.display_name, m.effect_summary, m.tradeoff_summary]
 		b.autowrap_mode = TextServer.AUTOWRAP_WORD
+		# Ancestral/hidden mutations get a special reveal so the player
+		# immediately connects them back to discoveries.
+		if m.family == "ancestral":
+			b.text = "ANCESTRAL\n%s\n\n%s\n(%s)" % [m.display_name, m.effect_summary, m.tradeoff_summary]
+			b.add_theme_color_override("font_color", Color(0.95, 0.85, 0.45))
+			b.add_theme_color_override("font_pressed_color", Color(0.95, 0.85, 0.45))
+		else:
+			b.text = "%s\n\n%s\n(%s)" % [m.display_name, m.effect_summary, m.tradeoff_summary]
 		b.pressed.connect(func(): mutation_chosen.emit(id))
 		draft_row.add_child(b)
 	draft_panel.visible = true
@@ -567,5 +574,13 @@ func _refresh_records() -> void:
 		var ordered := NarrativeDB.memories.duplicate()
 		ordered.reverse()
 		for entry in ordered.slice(0, 15):
-			text += "  • %s\n" % entry.get("display_text", "")
+			var gen := int(entry.get("generation", 0))
+			var biome: String = entry.get("biome", "")
+			var landmark: String = entry.get("landmark", "")
+			var ctx := ""
+			if biome != "":
+				ctx += " — " + biome
+			if landmark != "":
+				ctx += " near " + landmark
+			text += "  • Gen %d%s: %s\n" % [gen, ctx, entry.get("display_text", "")]
 	records_label.text = text

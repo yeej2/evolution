@@ -172,21 +172,22 @@ func _test_narrative() -> void:
 	await get_tree().create_timer(2.0).timeout
 	if my_creature == null:
 		return
-	# Find the Dead Giant landmark.
-	var giant = null
-	for o in world.objects_by_id.values():
-		if o.kind == "dead_giant":
-			giant = o
-			break
-	if giant == null:
-		print("[test] ERROR: no dead_giant landmark generated")
-		return
-	my_creature.global_position = giant.global_position
-	# Grant everything needed to access every clue and the body plan for
-	# the hidden mutation, then press E five times to exhaust the chain.
-	for m in ["keen_smell", "digging_claws", "jaws", "climbing_claws", "long_jumper"]:
+	# Grant everything needed to access every physical clue and the body
+	# plan for the hidden mutation. Each specialization has a base req.
+	for m in ["claws", "legs", "keen_smell", "digging_claws", "jaws", "climbing_claws", "long_jumper"]:
 		my_creature.add_mutation(m)
-	for i in range(5):
+	# Touch each physical bone once in an arbitrary order.
+	var order := ["giant_tissue", "giant_excavation", "giant_femur", "giant_skull"]
+	for kind in order:
+		var target = null
+		for o in world.objects_by_id.values():
+			if o.kind == kind:
+				target = o
+				break
+		if target == null:
+			print("[test] ERROR: no %s object generated" % kind)
+			continue
+		my_creature.global_position = target.global_position
 		world.rpc_request_eat()
 		await get_tree().create_timer(0.2).timeout
 	print("[test] discovered_clues=%s" % [NarrativeDB.discovered_clues])
@@ -425,19 +426,20 @@ func _on_mutation_draft_offered(choices: Array) -> void:
 	ui.show_mutation_draft(choices)
 
 func _on_mutation_chosen(mutation_id: String) -> void:
+	# Always go through the authoritative World path; the UI never directly
+	# mutates the creature. Host calls the function locally, clients RPC it.
 	if NetworkManager.is_hosting or multiplayer.multiplayer_peer == null:
-		my_creature.add_mutation(mutation_id)
+		world.rpc_choose_mutation(mutation_id)
 	else:
 		world.rpc_choose_mutation.rpc_id(1, mutation_id)
 	ui.hide_mutation_draft()
 
 func _on_migrate_pressed() -> void:
+	# Same as mutation: UI asks, World validates, World changes state.
+	# The game-over screen and spectating are handled by the player_died
+	# signal that World emits on a successful migration.
 	if NetworkManager.is_hosting or multiplayer.multiplayer_peer == null:
-		var won := my_creature.can_migrate()
-		ui.show_game_over(won, my_creature)
-		_spectate_cam_pos = my_creature.global_position
-		_spectating = true
-		my_creature = null
+		world.rpc_request_migrate()
 	else:
 		world.rpc_request_migrate.rpc_id(1)
 

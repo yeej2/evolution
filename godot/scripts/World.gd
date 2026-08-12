@@ -342,10 +342,11 @@ func _on_creature_died(c: Creature) -> void:
 	if c.is_player:
 		_log_telemetry(c, "died")
 		var attacker_name := attacker.species_data.display_name if attacker and attacker.species_data else "a predator"
+		var landmark: String = nearest_landmark_name(c.global_position)
 		if attacker and attacker.species_data and attacker.species_data.creature_type == "apex":
-			NarrativeDB.add_memory("killed_by_apex", c, "Generation %d was killed by the %s." % [c.generation, attacker_name])
+			NarrativeDB.add_memory("killed_by_apex", c, "Generation %d was killed by the %s." % [c.generation, attacker_name], biome_id, world_seed, landmark)
 		else:
-			NarrativeDB.add_memory("killed_by_rival", c, "Generation %d was killed by %s." % [c.generation, attacker_name])
+			NarrativeDB.add_memory("killed_by_rival", c, "Generation %d was killed by %s." % [c.generation, attacker_name], biome_id, world_seed, landmark)
 		_broadcast_narrative_sync()
 		# Real bug, not just a design gap: reproduce previously only ever
 		# worked after a migration win, because _creature_for_sender()
@@ -369,8 +370,11 @@ func _on_creature_died(c: Creature) -> void:
 				was_first = true
 			attacker.apex_killed = true
 			if was_first:
-				NarrativeDB.add_memory("first_apex_kill", attacker, "Generation %d killed its first apex: the %s." % [attacker.generation, c.species_data.display_name if c.species_data else "apex"])
+				NarrativeDB.add_memory("first_apex_kill", attacker, "Generation %d killed its first apex: the %s." % [attacker.generation, c.species_data.display_name if c.species_data else "apex"], biome_id, world_seed, nearest_landmark_name(attacker.global_position))
 				_broadcast_narrative_sync()
+		if fresh and attacker and attacker.is_player and c.chapter_alpha:
+			NarrativeDB.add_memory("broke_chapter", attacker, "Generation %d broke the Hungry Pack by killing its alpha." % attacker.generation, biome_id, world_seed, nearest_landmark_name(attacker.global_position))
+			_broadcast_narrative_sync()
 		_broadcast_despawn_creature(c.entity_id)
 		_spawn_wildlife(c.species_data.creature_type)
 
@@ -656,49 +660,63 @@ func _try_enter_refuge(c: Creature) -> void:
 			return
 
 ## Narrative discovery: pressing E near a Dead Giant tries to uncover the
-## next undiscovered clue that the creature's body can actually access.
-## The server validates prerequisites and required mutations, so a client
-## cannot fake a discovery.
+## specific clue associated with the physical part the creature is touching.
+## Examine can happen at any part of the skeleton; after that, each clue is
+## independent and located at a different bone: decayed tissue (Smell),
+## buried ribs (Excavate), cracked femur (Break Bone), elevated skull
+## (Reach Skull). The server validates location, prerequisites, and the
+## required mutation, so clients cannot fake a discovery.
 func _try_discovery(c: Creature) -> bool:
 	if not _is_authority():
 		return false
-	const DISCOVERY_RANGE := 140.0
+	const DISCOVERY_RANGE := 70.0
+	const GIANT_KINDS := ["dead_giant", "giant_skull", "giant_femur", "giant_ribs", "giant_excavation", "giant_tissue"]
 	var landmark = null
 	for o in objects_by_id.values():
-		if o.kind == "dead_giant" and c.global_position.distance_to(o.global_position) <= c.stats.radius + o.radius + DISCOVERY_RANGE:
-			landmark = o
-			break
+		if o.kind in GIANT_KINDS:
+			var reach: float = c.stats.radius + o.radius + DISCOVERY_RANGE
+			if c.global_position.distance_to(o.global_position) <= reach and (landmark == null or c.global_position.distance_to(o.global_position) < c.global_position.distance_to(landmark.global_position)):
+				landmark = o
 	if landmark == null:
 		return false
-	# Try clues in discovery order, but the next one may not be accessible
-	# with current mutations - in which case we tell the player that.
-	var mystery_id := "dead_giant"
-	var m: Dictionary = NarrativeDB.mystery(mystery_id)
-	var clue_ids: Array = m.get("clue_ids", [])
-	for clue_id in clue_ids:
-		if clue_id in NarrativeDB.discovered_clues:
-			continue
-		if NarrativeDB.discover_clue(clue_id, c):
-			_show_discovery(c.owner_peer_id, NarrativeDB.clue(clue_id).get("discovery_text", ""))
+	# Examine can be performed at any part of the skeleton and is the
+	# prerequisite for everything else.
+	if not "examine_giant" in NarrativeDB.discovered_clues:
+		if NarrativeDB.discover_clue("examine_giant", c, biome_id, world_seed, nearest_landmark_name(c.global_position)):
+			_show_discovery(c.owner_peer_id, NarrativeDB.clue("examine_giant").get("discovery_text", ""))
 			_broadcast_narrative_sync()
+		# The central skeleton is just the introduction. Specific bones
+		# may also be discovered from the same press, but only if you go
+		# to the right physical location.
+		if landmark.kind == "dead_giant":
 			return true
+	# Map this physical bone to its clue.
+	var CLUE_FOR_OBJECT := {
+		"giant_tissue": "smell_giant",
+		"giant_excavation": "excavate_giant",
+		"giant_femur": "break_bone",
+		"giant_skull": "reach_skull",
+	}
+	var clue_id: String = CLUE_FOR_OBJECT.get(landmark.kind, "")
+	if clue_id == "" or clue_id in NarrativeDB.discovered_clues:
+		if NarrativeDB.mystery_clue_count("dead_giant") == NarrativeDB.mystery_clue_total("dead_giant"):
+			_show_discovery(c.owner_peer_id, "You have learned all you can from these remains.")
 		else:
-			var data := NarrativeDB.clue(clue_id)
-			var req: String = data.get("required_mutation_id", "")
-			if req != "" and not c.mutation.has(req):
-				_show_discovery(c.owner_peer_id, "Something more could be learned here... but not with this body.")
-				return true
-			# prerequisites not met: silently try the next? No, show that the
-			# player is missing a prerequisite (which should be rare because E
-			# is also used for other things - we don't want false-positives).
-			var missing: Array = []
-			for pre in data.get("prerequisite_clue_ids", []):
-				if not pre in NarrativeDB.discovered_clues:
-					missing.append(pre)
-			if not missing.is_empty():
-				_show_discovery(c.owner_peer_id, "This part of the skeleton is confusing. Another clue may be needed first.")
-				return true
-	return false
+			_show_discovery(c.owner_peer_id, "Something about these remains is beyond your current adaptations.")
+		return true
+	var data := NarrativeDB.clue(clue_id)
+	var req: String = data.get("required_mutation_id", "")
+	if req != "" and not c.mutation.has(req):
+		_show_discovery(c.owner_peer_id, "This part of the giant seems important... but not with this body.")
+		return true
+	for pre in data.get("prerequisite_clue_ids", []):
+		if not pre in NarrativeDB.discovered_clues:
+			_show_discovery(c.owner_peer_id, "This part of the skeleton is confusing. Another clue may be needed first.")
+			return true
+	if NarrativeDB.discover_clue(clue_id, c, biome_id, world_seed, nearest_landmark_name(c.global_position)):
+		_show_discovery(c.owner_peer_id, data.get("discovery_text", ""))
+		_broadcast_narrative_sync()
+	return true
 
 func _show_discovery(peer_id: int, text: String) -> void:
 	if peer_id == multiplayer.get_unique_id() or multiplayer.multiplayer_peer == null:
@@ -796,21 +814,31 @@ func rpc_choose_mutation(mutation_id: String) -> void:
 		var was_first: bool = c.mutation.owned.is_empty()
 		c.add_mutation(mutation_id)
 		if was_first and not c.mutation.owned.is_empty():
-			NarrativeDB.add_memory("first_mutation", c, "Generation %d developed its first mutation: %s." % [c.generation, MutationDB.get_mutation(c.mutation.owned[0]).display_name])
+			NarrativeDB.add_memory("first_mutation", c, "Generation %d developed its first mutation: %s." % [c.generation, MutationDB.get_mutation(c.mutation.owned[0]).display_name], biome_id, world_seed, nearest_landmark_name(c.global_position))
 			_broadcast_narrative_sync()
 
 func _offer_mutation_draft(c: Creature) -> void:
 	var weights: Dictionary = c.lineage_data.mutation_weights if c.lineage_data else {}
 	var choices: Array = c.mutation.roll_choices(3, weights, GameState.rng)
-	# Ancestral mutations: hidden until discovered, then injected into the
-	# draft if this creature's body is compatible. We add them to the same
-	# pending list so the existing server validation works unchanged.
+	# Ancestral mutations: the first time a hidden mutation becomes
+	# biologically possible for this creature, we guarantee it appears as a
+	# distinctive fourth draft option. After that it can compete in the
+	# weighted pool like any other mutation.
 	var hidden := NarrativeDB.eligible_hidden_mutations(c)
 	for h in hidden:
-		if not h in choices:
+		if h in choices:
+			continue
+		if not NarrativeDB.is_hidden_offered(h):
+			# Guaranteed first offer: prepend or append as an extra card.
 			choices.append(h)
-		if choices.size() >= 4:
-			break
+			NarrativeDB.mark_hidden_offered(h)
+			_broadcast_narrative_sync()
+		else:
+			# Already seen once: let it compete for a slot if room.
+			if choices.size() < 4:
+				# Weight it highly so it still feels earned from the discovery.
+				if GameState.rng.randf() < 0.5:
+					choices.append(h)
 	if choices.is_empty():
 		return
 	c.pending_mutation_choices = choices
@@ -834,7 +862,7 @@ func rpc_request_migrate() -> void:
 	var c := _creature_for_sender()
 	if c and c.can_migrate():
 		_log_telemetry(c, "migrated")
-		NarrativeDB.add_memory("first_migration", c, "Generation %d migrated to a new world." % c.generation)
+		NarrativeDB.add_memory("first_migration", c, "Generation %d migrated to a new world." % c.generation, biome_id, world_seed, nearest_landmark_name(c.global_position))
 		_broadcast_narrative_sync()
 		_announce_player_died(c.entity_id) # reuse the end-of-run screen with a win flag read from hp>0
 	elif c:
@@ -900,7 +928,7 @@ func rpc_request_reproduce(inherit_mutation_id: String) -> void:
 		nc.stats.mass += prior_mass * 0.1
 		if inherit_mutation_id != "":
 			nc.add_mutation(inherit_mutation_id)
-		NarrativeDB.add_memory("first_reproduction", nc, "Generation %d was born from the lineage." % nc.generation)
+		NarrativeDB.add_memory("first_reproduction", nc, "Generation %d was born from the lineage." % nc.generation, biome_id, world_seed, nearest_landmark_name(nc.global_position))
 		_broadcast_narrative_sync()
 
 func _creature_for_sender() -> Creature:

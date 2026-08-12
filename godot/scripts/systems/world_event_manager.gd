@@ -56,7 +56,7 @@ static func _drought_end(world: World) -> void:
 	for c in world.creatures_by_id.values():
 		if c.is_player and c.stats.hp > 0.0:
 			c.survived_drought = true
-			NarrativeDB.add_memory("survived_drought", c, "Generation %d survived the Long Drought." % c.generation)
+			NarrativeDB.add_memory("survived_drought", c, "Generation %d survived the Long Drought." % c.generation, world.biome_id, world.world_seed, world.nearest_landmark_name(c.global_position))
 			world._broadcast_narrative_sync()
 
 static func _drought_tick(world: World, delta: float) -> void:
@@ -95,7 +95,7 @@ static func _wildfire_end(world: World) -> void:
 	for c in world.creatures_by_id.values():
 		if c.is_player and c.stats.hp > 0.0:
 			c.survived_wildfire = true
-			NarrativeDB.add_memory("survived_wildfire", c, "Generation %d survived the Burning Season." % c.generation)
+			NarrativeDB.add_memory("survived_wildfire", c, "Generation %d survived the Burning Season." % c.generation, world.biome_id, world.world_seed, world.nearest_landmark_name(c.global_position))
 			world._broadcast_narrative_sync()
 
 static func _wildfire_coord(world: World, pos: Vector2) -> float:
@@ -191,10 +191,26 @@ static func _predator_surge_end(world: World) -> void:
 	world.event_data.erase("surge_spawned_ids")
 
 # --- The Hungry Pack ---
-# A v0.3 ecological Chapter: a sudden glut of Razorcats, one larger alpha.
+# A v0.3 ecological Chapter: prey is scarce, carcasses appear, and a
+# stronger alpha leads extra Razorcats. Killing the alpha records a
+# lineage memory; the pack will still leave when the Chapter ends.
 
 static func _hungry_pack_start(world: World) -> void:
 	var ed: WorldEventData = EventDB.get_event("hungry_pack")
+	# The pack's pressure is already being felt: some prey have been eaten
+	# and there are fresh carcasses to scavenge.
+	var prey_ids: Array = []
+	for c in world.creatures_by_id.values():
+		if c.species_data and c.species_data.creature_type == "prey":
+			prey_ids.append(c.entity_id)
+	prey_ids.shuffle()
+	for i in range(mini(int(prey_ids.size() * 0.4), 6)):
+		world._broadcast_despawn_creature(prey_ids[i])
+	for i in range(4):
+		var pos := Vector2(world.rng.randf_range(40, 1560), world.rng.randf_range(40, 1160))
+		var fid := world._next_food_id
+		world._next_food_id += 1
+		world._broadcast_spawn_food(fid, "carcass", pos.x, pos.y, 40.0, 14.0, Color("8b5a2b"), false, true, false)
 	var spawned: Array = []
 	for i in range(int(ed.params.get("extra_razorcats", 5))):
 		var before: Array = world.creatures_by_id.keys()
@@ -211,6 +227,7 @@ static func _hungry_pack_start(world: World) -> void:
 				alpha.stats.hp = alpha.stats.max_hp
 				alpha.stats.mass += 0.5
 				alpha.stats.bite_damage += 4.0
+				alpha.chapter_alpha = true
 			spawned.append(new_ids[0])
 	world.event_data["hungry_pack_spawned"] = spawned
 

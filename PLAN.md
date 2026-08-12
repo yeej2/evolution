@@ -520,3 +520,36 @@ makes the player want to continue exploring across runs.
   WorldEvent system. A dedicated Chapter Director may be worthwhile if
   more Chapters are added.
 
+### 9.12 v0.3.1 — Ancestral Memory polish
+
+A short follow-up pass to make the v0.3 systems feel like one coherent
+narrative loop before deciding whether the idea works.
+
+- **Independent Dead Giant clue access.** After `examine_giant`, the
+  remaining four clues are no longer blocked by whichever happens to be
+  next in a linear list. The creature can discover any clue its body is
+  actually capable of performing.
+- **Physical Dead Giant.** The skeleton is now a cluster of distinct
+  interactive objects (`giant_tissue`, `giant_excavation`, `giant_femur`,
+  `giant_skull`) plus a central `dead_giant` anchor. Each clue must be
+  reached at the right bone, so the player is moving through a place
+  rather than standing beside a single lore object.
+- **Authoritative UI pipeline for mutation and migration.** `main.gd`
+  no longer directly mutates `my_creature` for host/single-player.
+  `mutation_chosen` and `migrate_pressed` always route through
+  `World.rpc_choose_mutation` and `World.rpc_request_migrate`, so the
+  same validation, telemetry, and narrative memory logic runs for all
+  peers.
+- **Distinctive Ancestral draft reveal.** The first time a hidden
+  mutation becomes biologically possible, it is guaranteed as a fourth
+  draft option with a gold "ANCESTRAL —" label. After it has been
+  offered once, it can compete with normal mutations.
+- **Hungry Pack Chapter polish.** The event now desawns some prey and
+  spawns carcasses at the start, so the ecosystem tells the story.
+  Killing the chapter alpha records a `broke_chapter` lineage memory.
+- **Lineage memories are location-aware.** All memory creation now
+  records the current `biome_id`, `world_seed`, and nearest landmark.
+  The Ancestral Memory UI displays "Gen X — biome near landmark".
+- **README stale note fixed.** The death→reproduction note no longer
+  lists it as a not-yet-fixed follow-up.
+

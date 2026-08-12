@@ -42,6 +42,7 @@ var combo_timer: float = 0.0
 var grabbed_by_id: int = -1 ## Behemoth target-side: entity_id of whoever is holding me (immobilized)
 var grab_target_id: int = -1 ## Behemoth attacker-side: entity_id of who I'm holding
 var apex_charging: bool = false ## client-side: set from snapshot flags when an apex is in charge/pursue
+var chapter_alpha: bool = false ## event Chapter: this creature is the alpha of the current Chapter
 var aiming: bool = false ## Spitter: RMB held
 var is_flipped: bool = false ## Behemoth: grabbed hardshell target is exposed for easy bites
 var venom: float = 0.0     ## Spitter: stored venom available for ranged shots

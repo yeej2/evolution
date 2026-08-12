@@ -80,6 +80,7 @@ const CHAPTERS := {
 var discovered_clues: Array = [] ## list of clue_ids
 var unlocked_insights: Array = [] ## list of insight_ids
 var completed_mysteries: Array = [] ## list of mystery_ids
+var offered_hidden_mutations: Array = [] ## hidden mutation ids ever offered in a draft
 var memories: Array = [] ## list of {event_type, generation, biome, world_seed, display_text, order}
 
 var _order_counter: int = 0
@@ -104,6 +105,7 @@ func _load() -> void:
 	discovered_clues = data.get("discovered_clues", [])
 	unlocked_insights = data.get("unlocked_insights", [])
 	completed_mysteries = data.get("completed_mysteries", [])
+	offered_hidden_mutations = data.get("offered_hidden_mutations", [])
 	memories = data.get("memories", [])
 	_order_counter = data.get("order_counter", 0)
 	_loaded = true
@@ -126,6 +128,7 @@ func serialize() -> Dictionary:
 		"discovered_clues": discovered_clues.duplicate(),
 		"unlocked_insights": unlocked_insights.duplicate(),
 		"completed_mysteries": completed_mysteries.duplicate(),
+		"offered_hidden_mutations": offered_hidden_mutations.duplicate(),
 		"memories": memories.duplicate(),
 		"order_counter": _order_counter,
 	}
@@ -134,6 +137,7 @@ func deserialize(data: Dictionary) -> void:
 	discovered_clues = data.get("discovered_clues", [])
 	unlocked_insights = data.get("unlocked_insights", [])
 	completed_mysteries = data.get("completed_mysteries", [])
+	offered_hidden_mutations = data.get("offered_hidden_mutations", [])
 	memories = data.get("memories", [])
 	_order_counter = data.get("order_counter", 0)
 
@@ -163,8 +167,9 @@ func mystery_clue_total(id: String) -> int:
 ## --- Discovery ---
 
 ## Returns true if this is a new discovery. The host calls this and then
-## broadcasts the result to clients.
-func discover_clue(clue_id: String, c: Creature = null) -> bool:
+## broadcasts the result to clients. `world_*` context lets memories record
+## where the discovery happened.
+func discover_clue(clue_id: String, c: Creature = null, biome: String = "", world_seed: int = 0, landmark: String = "") -> bool:
 	if clue_id in discovered_clues:
 		return false
 	var data := clue(clue_id)
@@ -181,24 +186,23 @@ func discover_clue(clue_id: String, c: Creature = null) -> bool:
 	var reward: String = data.get("insight_reward_id", "")
 	if reward != "" and not reward in unlocked_insights:
 		unlocked_insights.append(reward)
-		add_memory("discovered_insight", c, "Unlocked Ancestral Insight: %s" % insight(reward).get("display_name", reward))
+		add_memory("discovered_insight", c, "Unlocked Ancestral Insight: %s" % insight(reward).get("display_name", reward), biome, world_seed, landmark)
 
 	var mid: String = data.get("mystery_id", "")
 	if mid != "" and mystery_clue_count(mid) == mystery_clue_total(mid) and not mid in completed_mysteries:
 		completed_mysteries.append(mid)
-		add_memory("completed_mystery", c, "Mystery solved: %s" % mystery(mid).get("display_name", mid))
+		add_memory("completed_mystery", c, "Mystery solved: %s" % mystery(mid).get("display_name", mid), biome, world_seed, landmark)
 	else:
-		add_memory("discovered_clue", c, "Discovered: %s" % data.get("display_name", clue_id))
+		add_memory("discovered_clue", c, "Discovered: %s" % data.get("display_name", clue_id), biome, world_seed, landmark)
 
 	_save()
 	return true
 
 ## --- Memories ---
 
-func add_memory(event_type: String, c: Creature = null, custom_text: String = "") -> void:
+func add_memory(event_type: String, c: Creature = null, custom_text: String = "", biome: String = "", world_seed: int = 0, landmark: String = "") -> void:
 	var generation: int = c.generation if c != null else 0
-	var biome := ""
-	var seed := 0
+	var seed := world_seed
 	_order_counter += 1
 	var text := custom_text
 	if text == "":
@@ -208,6 +212,7 @@ func add_memory(event_type: String, c: Creature = null, custom_text: String = ""
 		"generation": generation,
 		"biome": biome,
 		"world_seed": seed,
+		"landmark": landmark,
 		"display_text": text,
 		"order": _order_counter,
 	}
@@ -250,6 +255,14 @@ func eligible_hidden_mutations(c: Creature) -> Array:
 			if not c.mutation.has(mut) and _meets_prerequisites(mut, c):
 				out.append(mut)
 	return out
+
+func is_hidden_offered(mutation_id: String) -> bool:
+	return mutation_id in offered_hidden_mutations
+
+func mark_hidden_offered(mutation_id: String) -> void:
+	if not mutation_id in offered_hidden_mutations:
+		offered_hidden_mutations.append(mutation_id)
+		_save()
 
 func _meets_prerequisites(mutation_id: String, c: Creature) -> bool:
 	# Hidden mutations have flexible biological prerequisites. Long-term this
