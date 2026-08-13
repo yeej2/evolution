@@ -139,6 +139,12 @@ func host_start(seed_val: int = -1, biome: String = "forest") -> void:
 			_spawn_wildlife("predator")
 		for i in range(int(counts["apex"])):
 			_spawn_wildlife("apex")
+	# Catch up any peers that connected before the world finished generating
+	# (their initial connection fired before world_seed was set, so the
+	# _on_peer_connected_send_catchup guard skipped them).
+	if _is_authority() and multiplayer.multiplayer_peer:
+		for peer_id in multiplayer.get_peers():
+			send_full_state_to_peer(peer_id)
 
 ## Regenerates the deterministic terrain/food layout locally. Never spawns
 ## wildlife itself - the server does that once via host_start(), then
