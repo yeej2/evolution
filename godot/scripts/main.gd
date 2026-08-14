@@ -414,9 +414,13 @@ func _on_connected_ok() -> void:
 	_world_ready.emit()
 
 func _on_connect_failed() -> void:
-	ui.show_message("Connection failed.")
+	# Make sure the message is visible even if the user had another panel
+	# open while the connection attempt was in flight.
+	ui.show_menu()
+	ui.show_message("Connection failed. Check the address, port, and firewall.")
 
 func _on_server_disconnected() -> void:
+	ui.show_menu()
 	ui.show_message("Disconnected from host.")
 
 func _on_peer_connected(_peer_id: int) -> void:
